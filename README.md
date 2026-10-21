@@ -23,6 +23,8 @@ Get the latest version from the Releases page:
 - **Mac** (Apple silicon and Intel): `RetroHub.zip`
 - **Windows**: `RetroHub-Setup-<version>.exe` (installer) or `RetroHub-Portable-<version>.exe`
 - **Linux**: `RetroHub-<version>-x86_64.AppImage` (`chmod +x` it, then run)
+- **Raspberry Pi 4/5** (64-bit Raspberry Pi OS): `RetroHub-<version>-arm64.AppImage`. To build a console that
+  boots into RetroHub, with a shutdown button and power LED, see [pi/README.md](pi/README.md).
 
 On Windows and Linux, RetroHub looks for emulators in their usual install
 locations (including Scoop on Windows and Flatpak on Linux). If one isn't found,
@@ -53,7 +55,7 @@ sign it with a Developer ID certificate and notarize it:
     npm run dist       # build installers for the current OS
 
 Publishing a GitHub release triggers `.github/workflows/desktop.yml`, which builds
-the Mac, Windows and Linux versions and attaches them to the release. The Mac build
+the Mac, Windows and Linux (x86_64 and Raspberry Pi) versions and attaches them to the release. The Mac build
 from CI is signed ad hoc, and the Windows build is unsigned, so Windows SmartScreen
 shows "Windows protected your PC" on first run (click **More info** → **Run anyway**).
 

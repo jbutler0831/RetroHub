@@ -299,8 +299,11 @@ function renderSetup() {
 
 // ---- Couch mode --------------------------------------------------------------------
 
-const COVER_WIDTH = 220;
-const COVER_GAP = 36;
+/** Cover width and gap in pixels, from the CSS (they shrink on small screens). */
+function coverMetrics() {
+  const style = getComputedStyle(document.documentElement);
+  return { width: parseFloat(style.getPropertyValue('--cover-w')), gap: parseFloat(style.getPropertyValue('--cover-gap')) };
+}
 
 function renderCouch() {
   const keys = couchKeys();
@@ -331,7 +334,8 @@ function updateCouch() {
   const carousel = $('carousel');
   if (!game || !carousel) return;
   carousel.querySelectorAll('.cover').forEach((el, i) => el.classList.toggle('current', i === couchIndex));
-  carousel.style.transform = `translateX(${window.innerWidth / 2 - (couchIndex * (COVER_WIDTH + COVER_GAP) + COVER_WIDTH / 2)}px)`;
+  const { width, gap } = coverMetrics();
+  carousel.style.transform = `translateX(${window.innerWidth / 2 - (couchIndex * (width + gap) + width / 2)}px)`;
 
   const system = systemById(game.system);
   const last = S.lastPlayed[game.id];
@@ -348,7 +352,7 @@ function setCouch(on) {
   const keys = couchKeys();
   if (on && keys.length && !keys.includes(selection)) selection = keys[0];
   couchIndex = 0;
-  api.setFullScreen(on);
+  api.setFullScreen(on || S.consoleMode);
   render();
 }
 
@@ -572,6 +576,7 @@ api.state().then((state) => {
   // New users land on Setup until they have an emulator.
   selection = state.emulators.some((e) => e.installed) ? 'sys:nes' : 'setup';
   applyState(state);
+  if (state.consoleMode) setCouch(true);
   content.focus();
   requestAnimationFrame(pollGamepads);
 });

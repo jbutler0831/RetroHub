@@ -84,7 +84,7 @@ function coreDirs(retroarch) {
   if (platform === 'darwin') return [path.join(home, 'Library/Application Support/RetroArch/cores')];
   if (platform === 'win32') return [path.join(path.dirname(retroarch.command), 'cores')];
   if (retroarch.flatpak) return [path.join(home, '.var/app/org.libretro.RetroArch/config/retroarch/cores')];
-  return [path.join(home, '.config/retroarch/cores'), '/usr/lib/x86_64-linux-gnu/libretro', '/usr/lib/libretro', '/usr/lib64/libretro'];
+  return [path.join(home, '.config/retroarch/cores'), '/usr/lib/x86_64-linux-gnu/libretro', '/usr/lib/aarch64-linux-gnu/libretro', '/usr/lib/libretro', '/usr/lib64/libretro'];
 }
 
 const coreExt = platform === 'darwin' ? 'dylib' : platform === 'win32' ? 'dll' : 'so';
@@ -101,7 +101,7 @@ function run(command, args) {
 }
 
 /** The first installed way to play a system: { label, start(gamePath) } or null. */
-function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS) {
+function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS, { fullscreen = false } = {}) {
   for (const backend of system.backends) {
     if (backend.type === 'retroarch') {
       const retroarch = resolve(EMULATORS.find((e) => e.id === 'retroarch'), customPaths);
@@ -112,7 +112,7 @@ function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS) {
         if (corePath) {
           return {
             label: `RetroArch (${core.name})`,
-            start: (game) => run(retroarch.command, [...retroarch.prefix, '-L', corePath,
+            start: (game) => run(retroarch.command, [...retroarch.prefix, ...(fullscreen ? ['-f'] : []), '-L', corePath,
               ...graphicsOptions.retroArchArgs(system.id, core, retroarch, graphics), game]),
           };
         }
@@ -154,9 +154,9 @@ function readiness(system, customPaths) {
   return { ready: false, summary: 'Setup needed', detail: `Install ${names} to play ${system.name} games.`, missing: ids[0] || null };
 }
 
-async function launch(game, customPaths, graphics) {
+async function launch(game, customPaths, graphics, options) {
   const system = SYSTEMS.find((s) => s.id === game.system);
-  const found = plan(system, customPaths, graphics);
+  const found = plan(system, customPaths, graphics, options);
   if (!found) throw new Error(readiness(system, customPaths).detail);
   try {
     await found.start(game.bootPath);

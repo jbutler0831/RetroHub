@@ -10,6 +10,8 @@ const { coverPath } = require('./covers');
 const graphicsOptions = require('./graphics');
 
 const RECENT_LIMIT = 24;
+// `--console` starts full screen in couch mode, for devices that boot straight into RetroHub.
+const consoleMode = process.argv.includes('--console');
 
 // ---- Settings ---------------------------------------------------------------
 
@@ -50,6 +52,7 @@ function state() {
   const emulators = availableEmulators();
   return {
     platform: process.platform,
+    consoleMode,
     libraryRoot: settings.libraryRoot,
     makers: MAKERS,
     systems: SYSTEMS.map(({ backends, ...info }) => ({ ...info, readiness: readiness({ backends, ...info }, settings.emulatorPaths) })),
@@ -79,7 +82,7 @@ async function play(id) {
   const game = gamesById.get(id);
   if (!game) return { error: 'That game is no longer in your library.' };
   try {
-    await launch(game, settings.emulatorPaths, settings.graphics);
+    await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen: consoleMode });
     settings.lastPlayed[id] = Date.now();
     saveSettings();
     sendState();
@@ -185,8 +188,9 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1180,
     height: 760,
-    minWidth: 820,
-    minHeight: 520,
+    minWidth: consoleMode ? 320 : 820,
+    minHeight: consoleMode ? 240 : 520,
+    fullscreen: consoleMode,
     title: 'RetroHub',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e20' : '#f5f5f7',
     icon: path.join(__dirname, 'renderer', 'icon.png'),

@@ -1,5 +1,5 @@
-# Builds the Mac (native Swift, universal), Windows and Linux (desktop/ folder) versions
-# of RetroHub and attaches them to the GitHub release that triggered the run.
+# Builds the Mac (native Swift, universal), Windows and Linux (desktop/ folder; x86_64, and
+# arm64 for Raspberry Pi) versions of RetroHub and attaches them to the GitHub release that triggered the run.
 name: Desktop builds
 
 on:
@@ -35,7 +35,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        # ubuntu-24.04-arm builds the arm64 AppImage for Raspberry Pi 4/5.
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -59,7 +60,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RetroHub-${{ runner.os }}
+          name: RetroHub-${{ matrix.os }}
           path: |
             desktop/dist/*.exe
             desktop/dist/*.AppImage

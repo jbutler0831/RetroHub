@@ -404,6 +404,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ---- Couch mode ---- */
 
+/* Cover size and spacing, read by app.js to center the carousel. Smaller on handheld screens. */
+:root { --cover-w: 220px; --cover-h: 300px; --cover-gap: 36px; }
+
 #couch {
   position: fixed;
   inset: 0;
@@ -442,8 +445,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-weight: 700;
 }
 .couch-stage { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center; }
-.carousel { display: flex; gap: 36px; height: 430px; align-items: center; transition: transform 0.28s cubic-bezier(.2,.8,.2,1); }
-.carousel .cover { flex: none; width: 220px; height: 300px; opacity: 0.5; transform: scale(0.9); transition: transform 0.25s, opacity 0.25s; }
+.carousel { display: flex; gap: var(--cover-gap); height: calc(var(--cover-h) * 1.43); align-items: center; transition: transform 0.28s cubic-bezier(.2,.8,.2,1); }
+.carousel .cover { flex: none; width: var(--cover-w); height: var(--cover-h); opacity: 0.5; transform: scale(0.9); transition: transform 0.25s, opacity 0.25s; }
 .carousel .cover.current { opacity: 1; transform: scale(1.15); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6); }
 .couch-details { text-align: center; padding: 0 60px; }
 .couch-details h2 { margin: 0; font-size: 34px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -455,6 +458,40 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .couch-empty { text-align: center; }
 .couch-empty h2 { font-size: 34px; margin: 12px 0 6px; }
 .couch-empty p { opacity: 0.7; font-size: 18px; }
+
+/* Handheld and small screens, e.g. 800x480 and 640x480. */
+@media (max-height: 600px) {
+  :root { --cover-w: 130px; --cover-h: 178px; --cover-gap: 22px; }
+  .couch-tabs { padding: 16px 56px 0 24px; gap: 12px; }
+  .couch-tabs .tabs { gap: 20px; }
+  .couch-tabs .tab { font-size: 16px; }
+  .couch-details { padding: 0 24px; }
+  .couch-details h2 { font-size: 22px; }
+  .couch-details p { font-size: 14px; margin-top: 2px; }
+  .couch-hints { gap: 20px; padding-bottom: 14px; font-size: 13px; }
+  .couch-hints span.label { margin-left: 6px; }
+  .couch-close { top: 8px; right: 10px; }
+  .couch-empty h2 { font-size: 22px; }
+  .couch-empty p { font-size: 14px; }
+}
+
+/* Tiny screens, e.g. 320x240. */
+@media (max-height: 300px) {
+  :root { --cover-w: 72px; --cover-h: 98px; --cover-gap: 14px; }
+  .couch-tabs { padding: 8px 32px 0 12px; gap: 8px; }
+  .couch-tabs .tabs { gap: 12px; }
+  .couch-tabs .tab { font-size: 12px; }
+  .button-badge { padding: 1px 6px; font-size: 10px; }
+  .couch-details { padding: 0 12px; }
+  .couch-details h2 { font-size: 15px; }
+  .couch-details p { font-size: 11px; }
+  .couch-hints { gap: 12px; padding-bottom: 6px; font-size: 11px; }
+  .couch-hints span.label { margin-left: 4px; }
+  .couch-close { top: 2px; right: 2px; }
+  .couch-empty svg { width: 32px; height: 32px; }
+  .couch-empty h2 { font-size: 15px; margin: 6px 0 2px; }
+  .couch-empty p { font-size: 11px; }
+}
 
 /* ---- Modal ---- */
 
