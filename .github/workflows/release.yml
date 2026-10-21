@@ -12,7 +12,9 @@ permissions:
 
 jobs:
   mac:
-    runs-on: macos-latest
+    # Intel runner: the Apple silicon (macos-latest) pool often has no free machines. build.sh
+    # still makes a universal app by compiling the arm64 and x86_64 slices separately.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
