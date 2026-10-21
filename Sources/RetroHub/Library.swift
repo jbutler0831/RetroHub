@@ -62,6 +62,8 @@ final class Library: ObservableObject {
     private static let favoritesKey = "favorites"
     private static let lastPlayedKey = "lastPlayed"
     private static let recentLimit = 24
+    /// The bundle ID RetroHub used to have; its settings are copied over once.
+    private static let legacyDomain = "local.retrohub"
 
     @Published private(set) var root: URL
     @Published private(set) var games: [GameSystem: [Game]] = [:]
@@ -71,6 +73,7 @@ final class Library: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
+        Self.migrateLegacySettings(into: defaults)
         if let path = defaults.string(forKey: Self.rootKey) {
             root = URL(filePath: path)
         } else {
@@ -80,6 +83,16 @@ final class Library: ObservableObject {
         lastPlayed = defaults.dictionary(forKey: Self.lastPlayedKey) as? [String: Date] ?? [:]
         createFolders()
         rescan()
+    }
+
+    private static func migrateLegacySettings(into defaults: UserDefaults) {
+        guard Bundle.main.bundleIdentifier != legacyDomain,
+              let legacy = UserDefaults.standard.persistentDomain(forName: legacyDomain) else { return }
+        for key in [rootKey, favoritesKey, lastPlayedKey] where defaults.object(forKey: key) == nil {
+            if let value = legacy[key] {
+                defaults.set(value, forKey: key)
+            }
+        }
     }
 
     func folder(for system: GameSystem) -> URL {

@@ -4,7 +4,7 @@
 <dict>
     <key>CFBundleName</key><string>RetroHub</string>
     <key>CFBundleDisplayName</key><string>RetroHub</string>
-    <key>CFBundleIdentifier</key><string>local.retrohub</string>
+    <key>CFBundleIdentifier</key><string>io.github.jbutler0831.retrohub</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleExecutable</key><string>RetroHub</string>
     <key>CFBundlePackageType</key><string>APPL</string>

@@ -36,6 +36,15 @@ use RetroArch on Windows and Linux.
 
     ./build.sh
 
+This builds `build/RetroHub.app` and `build/RetroHub.zip` (the file to upload to a
+release) and installs the app to `~/Applications`. By default the app is signed
+ad hoc: it runs on your Mac, but on other Macs Gatekeeper blocks it until the user
+right-clicks it and chooses **Open**. To build one that opens normally anywhere,
+sign it with a Developer ID certificate and notarize it:
+
+    xcrun notarytool store-credentials retrohub --apple-id <you@example.com> --team-id <TEAMID>
+    SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=retrohub ./build.sh
+
 **Windows/Linux app** (Electron, in `desktop/`): requires Node.js 22.
 
     cd desktop
@@ -44,7 +53,9 @@ use RetroArch on Windows and Linux.
     npm run dist       # build installers for the current OS
 
 Publishing a GitHub release triggers `.github/workflows/desktop.yml`, which builds
-the Windows and Linux versions and attaches them to the release.
+the Windows and Linux versions and attaches them to the release; upload the Mac
+`build/RetroHub.zip` yourself. The Windows build is unsigned, so Windows SmartScreen
+shows "Windows protected your PC" on first run (click **More info** → **Run anyway**).
 
 ## Games folder
 
