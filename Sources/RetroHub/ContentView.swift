@@ -3,45 +3,22 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var controller: ControllerInput
-    @State private var selection: GameSystem? = .nes
+    @State private var selection: SidebarItem? = .system(.nes)
     @State private var search = ""
+    @State private var couchMode = false
+
+    /// Couch mode only shows lists with games in them, so the controller never lands on a blank screen.
+    private var couchItems: [SidebarItem] {
+        SidebarItem.all.filter { !library.games(for: $0).isEmpty }
+    }
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section("Systems") {
-                    ForEach(GameSystem.allCases) { system in
-                        HStack {
-                            Label(system.displayName, systemImage: system.symbol)
-                            Spacer()
-                            Text("\(library.games[system]?.count ?? 0)")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        .tag(system)
-                    }
-                }
-                Section("Emulators") {
-                    ForEach(Emulator.allCases) { EmulatorRow(emulator: $0) }
-                }
-                Section("Controller") {
-                    ControllerRow(name: controller.controllerName)
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 240)
-        } detail: {
-            if let system = selection {
-                GameGridView(system: system, search: search)
-                    .id(system)
+        Group {
+            if couchMode {
+                CouchView(item: selection ?? .system(.nes), items: couchItems,
+                          onSelect: { selection = $0 }, onCycle: cycle, onExit: { setCouchMode(false) })
             } else {
-                ContentUnavailableView("Pick a system", systemImage: "gamecontroller")
-            }
-        }
-        .searchable(text: $search, prompt: "Search games")
-        .toolbar {
-            ToolbarItemGroup {
-                Button("Choose Games Folder", systemImage: "folder.badge.gearshape", action: chooseRoot)
-                Button("Rescan", systemImage: "arrow.clockwise") { library.rescan() }
+                browser
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -49,11 +26,12 @@ struct ContentView: View {
             library.rescan()
         }
         .onReceive(controller.commands) { command in
-            let step = command == .nextSystem ? 1 : command == .previousSystem ? -1 : 0
-            guard step != 0 else { return }
-            let systems = GameSystem.allCases
-            let current = systems.firstIndex(of: selection ?? .nes) ?? 0
-            selection = systems[(current + step + systems.count) % systems.count]
+            switch command {
+            case .previousSystem: cycle(-1)
+            case .nextSystem: cycle(1)
+            case .toggleCouchMode: setCouchMode(!couchMode)
+            default: break
+            }
         }
         .alert("Couldn't start the game", isPresented: Binding(
             get: { library.launchError != nil },
@@ -65,6 +43,65 @@ struct ContentView: View {
         }
     }
 
+    private var browser: some View {
+        NavigationSplitView {
+            List(selection: $selection) {
+                Section("Library") {
+                    ForEach([SidebarItem.favorites, .recent], id: \.self) { item in
+                        SidebarRow(item: item, count: library.games(for: item).count).tag(item)
+                    }
+                }
+                Section("Systems") {
+                    ForEach(GameSystem.allCases) { system in
+                        let item = SidebarItem.system(system)
+                        SidebarRow(item: item, count: library.games(for: item).count).tag(item)
+                    }
+                }
+                Section("Emulators") {
+                    ForEach(Emulator.allCases) { EmulatorRow(emulator: $0) }
+                }
+                Section("Controller") {
+                    ControllerRow(name: controller.controllerName)
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 220, ideal: 240)
+        } detail: {
+            if let item = selection {
+                GameGridView(item: item, search: search)
+                    .id(item)
+            } else {
+                ContentUnavailableView("Pick a system", systemImage: "gamecontroller")
+            }
+        }
+        .searchable(text: $search, prompt: "Search games")
+        .toolbar {
+            ToolbarItemGroup {
+                Button("Couch Mode", systemImage: "tv") { setCouchMode(true) }
+                    .help("Full-screen view for playing with a controller")
+                Button("Choose Games Folder", systemImage: "folder.badge.gearshape", action: chooseRoot)
+                Button("Rescan", systemImage: "arrow.clockwise") { library.rescan() }
+            }
+        }
+    }
+
+    private func cycle(_ step: Int) {
+        let items = couchMode ? couchItems : SidebarItem.all
+        guard !items.isEmpty else { return }
+        let current = items.firstIndex(of: selection ?? .system(.nes)) ?? (step > 0 ? -1 : 0)
+        selection = items[(current + step + items.count) % items.count]
+    }
+
+    private func setCouchMode(_ on: Bool) {
+        couchMode = on
+        if on, let first = couchItems.first, !couchItems.contains(selection ?? .favorites) {
+            selection = first
+        }
+        if let window = NSApp.keyWindow ?? NSApp.windows.first,
+           window.styleMask.contains(.fullScreen) != on {
+            window.toggleFullScreen(nil)
+        }
+    }
+
     private func chooseRoot() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -72,9 +109,24 @@ struct ContentView: View {
         panel.canCreateDirectories = true
         panel.directoryURL = library.root
         panel.prompt = "Use Folder"
-        panel.message = "RetroHub will create NES, SNES, N64, Xbox and PS3 folders inside it."
+        panel.message = "RetroHub will create a folder for each system inside it."
         if panel.runModal() == .OK, let url = panel.url {
             library.setRoot(url)
+        }
+    }
+}
+
+private struct SidebarRow: View {
+    let item: SidebarItem
+    let count: Int
+
+    var body: some View {
+        HStack {
+            Label(item.title, systemImage: item.symbol)
+            Spacer()
+            Text("\(count)")
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
         }
     }
 }
@@ -88,7 +140,7 @@ private struct EmulatorRow: View {
                 .foregroundStyle(emulator.isInstalled ? .green : .secondary)
             VStack(alignment: .leading) {
                 Text(emulator.displayName)
-                Text(emulator.covers).font(.caption).foregroundStyle(.secondary)
+                Text(emulator.covers).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer()
             if !emulator.isInstalled {
@@ -108,7 +160,7 @@ private struct ControllerRow: View {
                 .foregroundStyle(name == nil ? Color.secondary : Color.green)
             VStack(alignment: .leading) {
                 Text(name ?? "None connected")
-                Text(name == nil ? "Pair one in System Settings › Bluetooth" : "A: play · LB/RB: switch system")
+                Text(name == nil ? "Pair one in System Settings › Bluetooth" : "A: play · Y: favorite · Menu: couch mode")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -119,7 +171,7 @@ private struct ControllerRow: View {
 private struct GameGridView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var controller: ControllerInput
-    let system: GameSystem
+    let item: SidebarItem
     let search: String
     @State private var selectedID: Game.ID?
     @State private var columnCount = 1
@@ -129,26 +181,32 @@ private struct GameGridView: View {
     private static let spacing: CGFloat = 20
 
     private var games: [Game] {
-        let all = library.games[system] ?? []
+        let all = library.games(for: item)
         return search.isEmpty ? all : all.filter { $0.title.localizedCaseInsensitiveContains(search) }
     }
 
+    private var selectedGame: Game? {
+        games.first { $0.id == selectedID }
+    }
+
     var body: some View {
-        let readiness = Launcher.readiness(for: system)
         VStack(spacing: 0) {
-            Label(readiness.message, systemImage: readiness.ready ? "checkmark.seal" : "exclamationmark.triangle")
-                .foregroundStyle(readiness.ready ? Color.secondary : Color.orange)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(.bar)
-            Divider()
+            if case .system(let system) = item {
+                let readiness = Launcher.readiness(for: system)
+                Label(readiness.message, systemImage: readiness.ready ? "checkmark.seal" : "exclamationmark.triangle")
+                    .foregroundStyle(readiness.ready ? Color.secondary : Color.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(.bar)
+                Divider()
+            }
             if games.isEmpty {
                 emptyState
             } else {
                 grid
             }
         }
-        .navigationTitle(system.displayName)
+        .navigationTitle(item.title)
         .onReceive(controller.commands, perform: handle)
     }
 
@@ -160,12 +218,16 @@ private struct GameGridView: View {
                                              count: columnCount),
                               spacing: Self.spacing) {
                         ForEach(games) { game in
-                            GameCard(game: game, isSelected: game.id == selectedID)
+                            GameCard(game: game, isSelected: game.id == selectedID,
+                                     isFavorite: library.isFavorite(game), showsSystem: !isSystemList)
                                 .id(game.id)
                                 .onTapGesture(count: 2) { play(game) }
                                 .onTapGesture { selectedID = game.id }
                                 .contextMenu {
                                     Button("Play") { play(game) }
+                                    Button(library.isFavorite(game) ? "Remove from Favorites" : "Add to Favorites") {
+                                        library.toggleFavorite(game)
+                                    }
                                     Button("Show in Finder") {
                                         NSWorkspace.shared.activateFileViewerSelecting([game.bootURL])
                                     }
@@ -194,6 +256,11 @@ private struct GameGridView: View {
         .onKeyPress(.leftArrow) { handle(.move(dx: -1, dy: 0)); return .handled }
         .onKeyPress(.rightArrow) { handle(.move(dx: 1, dy: 0)); return .handled }
         .onKeyPress(.return) { handle(.play); return .handled }
+        .onKeyPress("f") { handle(.favorite); return .handled }
+    }
+
+    private var isSystemList: Bool {
+        if case .system = item { true } else { false }
     }
 
     private func handle(_ command: ControllerCommand) {
@@ -210,10 +277,14 @@ private struct GameGridView: View {
             // With an error showing, A dismisses it instead of retrying the launch.
             if library.launchError != nil {
                 library.launchError = nil
-            } else if let game = games.first(where: { $0.id == selectedID }) {
+            } else if let game = selectedGame {
                 play(game)
             }
-        case .previousSystem, .nextSystem:
+        case .favorite:
+            if let game = selectedGame { library.toggleFavorite(game) }
+        case .back:
+            library.launchError = nil
+        case .previousSystem, .nextSystem, .toggleCouchMode:
             break
         }
     }
@@ -225,16 +296,25 @@ private struct GameGridView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        if search.isEmpty {
-            ContentUnavailableView {
-                Label("No \(system.displayName) games yet", systemImage: system.symbol)
-            } description: {
-                Text("Put \(system.fileHint) in \(library.folder(for: system).path(percentEncoded: false))")
-            } actions: {
-                Button("Open Folder") { NSWorkspace.shared.open(library.folder(for: system)) }
-            }
-        } else {
+        if !search.isEmpty {
             ContentUnavailableView.search(text: search)
+        } else {
+            switch item {
+            case .favorites:
+                ContentUnavailableView("No favorites yet", systemImage: "star",
+                                       description: Text("Right-click a game, press F, or press Y on your controller to add it here."))
+            case .recent:
+                ContentUnavailableView("Nothing played yet", systemImage: "clock",
+                                       description: Text("Games you play show up here."))
+            case .system(let system):
+                ContentUnavailableView {
+                    Label("No \(system.displayName) games yet", systemImage: system.symbol)
+                } description: {
+                    Text("Put \(system.fileHint) in \(library.folder(for: system).path(percentEncoded: false))")
+                } actions: {
+                    Button("Open Folder") { NSWorkspace.shared.open(library.folder(for: system)) }
+                }
+            }
         }
     }
 }
@@ -242,11 +322,22 @@ private struct GameGridView: View {
 private struct GameCard: View {
     let game: Game
     let isSelected: Bool
+    let isFavorite: Bool
+    let showsSystem: Bool
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             CoverView(game: game)
                 .frame(width: 150, height: 200)
+                .overlay(alignment: .topTrailing) {
+                    if isFavorite {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                            .padding(6)
+                            .background(.black.opacity(0.5), in: Circle())
+                            .padding(6)
+                    }
+                }
                 .overlay {
                     RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 3)
@@ -254,37 +345,56 @@ private struct GameCard: View {
                 .shadow(radius: isSelected ? 6 : 2)
                 .scaleEffect(isSelected ? 1.05 : 1)
                 .animation(.snappy(duration: 0.15), value: isSelected)
+                .padding(.bottom, 2)
             Text(game.title)
                 .font(.callout)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
-                .frame(width: 150, height: 36, alignment: .top)
+                .frame(width: 150, alignment: .top)
+            if showsSystem {
+                Text(game.system.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+        .frame(height: showsSystem ? 262 : 246, alignment: .top)
         .contentShape(Rectangle())
     }
 }
 
-private struct CoverView: View {
+struct CoverView: View {
     let game: Game
+    /// Fill mode crops the art to cover its frame and shows nothing while loading; used for backdrops.
+    var fill = false
     @State private var image: NSImage?
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8).fill(.quaternary)
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: game.system.symbol).font(.largeTitle)
-                    Text(game.title).font(.caption).multilineTextAlignment(.center)
+        Group {
+            if fill {
+                if let image {
+                    Image(nsImage: image).resizable().scaledToFill()
+                } else {
+                    Color.clear
                 }
-                .foregroundStyle(.secondary)
-                .padding()
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                    if let image {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFit()
+                    } else {
+                        VStack(spacing: 8) {
+                            Image(systemName: game.system.symbol).font(.largeTitle)
+                            Text(game.title).font(.caption).multilineTextAlignment(.center)
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding()
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: game.id) {
             image = await CoverArt.data(for: game).flatMap(NSImage.init(data:))
         }

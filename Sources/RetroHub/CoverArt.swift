@@ -68,8 +68,18 @@ extension GameSystem {
         case .nes: "Nintendo - Nintendo Entertainment System"
         case .snes: "Nintendo - Super Nintendo Entertainment System"
         case .n64: "Nintendo - Nintendo 64"
-        case .xbox: "Microsoft - Xbox"
+        case .gamecube: "Nintendo - GameCube"
+        case .wii: "Nintendo - Wii"
+        case .gb: "Nintendo - Game Boy"
+        case .gbc: "Nintendo - Game Boy Color"
+        case .gba: "Nintendo - Game Boy Advance"
+        case .ds: "Nintendo - Nintendo DS"
+        case .genesis: "Sega - Mega Drive - Genesis"
+        case .ps1: "Sony - PlayStation"
+        case .ps2: "Sony - PlayStation 2"
         case .ps3: "Sony - PlayStation 3"
+        case .psp: "Sony - PlayStation Portable"
+        case .xbox: "Microsoft - Xbox"
         }
     }
 }

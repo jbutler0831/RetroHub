@@ -1,7 +1,7 @@
 import AppKit
 
 enum GameSystem: String, CaseIterable, Identifiable {
-    case nes, snes, n64, xbox, ps3
+    case nes, snes, n64, gamecube, wii, gb, gbc, gba, ds, genesis, ps1, ps2, ps3, psp, xbox
 
     var id: String { rawValue }
 
@@ -10,8 +10,18 @@ enum GameSystem: String, CaseIterable, Identifiable {
         case .nes: "NES"
         case .snes: "Super Nintendo"
         case .n64: "Nintendo 64"
-        case .xbox: "Xbox"
+        case .gamecube: "GameCube"
+        case .wii: "Wii"
+        case .gb: "Game Boy"
+        case .gbc: "Game Boy Color"
+        case .gba: "Game Boy Advance"
+        case .ds: "Nintendo DS"
+        case .genesis: "Sega Genesis"
+        case .ps1: "PlayStation"
+        case .ps2: "PlayStation 2"
         case .ps3: "PlayStation 3"
+        case .psp: "PSP"
+        case .xbox: "Xbox"
         }
     }
 
@@ -21,8 +31,18 @@ enum GameSystem: String, CaseIterable, Identifiable {
         case .nes: "NES"
         case .snes: "SNES"
         case .n64: "N64"
-        case .xbox: "Xbox"
+        case .gamecube: "GameCube"
+        case .wii: "Wii"
+        case .gb: "GB"
+        case .gbc: "GBC"
+        case .gba: "GBA"
+        case .ds: "DS"
+        case .genesis: "Genesis"
+        case .ps1: "PS1"
+        case .ps2: "PS2"
         case .ps3: "PS3"
+        case .psp: "PSP"
+        case .xbox: "Xbox"
         }
     }
 
@@ -32,91 +52,151 @@ enum GameSystem: String, CaseIterable, Identifiable {
         case .nes: ["nes"]
         case .snes: ["sfc", "smc"]
         case .n64: ["z64", "n64", "v64"]
-        case .xbox: ["iso", "xiso"]
+        case .gamecube: ["iso", "gcm", "rvz", "ciso"]
+        case .wii: ["wbfs", "iso", "rvz", "wad"]
+        case .gb: ["gb"]
+        case .gbc: ["gbc"]
+        case .gba: ["gba"]
+        case .ds: ["nds"]
+        case .genesis: ["md", "gen", "smd"]
+        case .ps1: ["cue", "chd", "pbp"]
+        case .ps2: ["iso", "chd", "cso"]
         case .ps3: []
+        case .psp: ["iso", "cso", "pbp", "chd"]
+        case .xbox: ["iso", "xiso"]
         }
     }
 
     var fileHint: String {
         switch self {
-        case .nes: ".nes files"
-        case .snes: ".sfc or .smc files"
-        case .n64: ".z64, .n64 or .v64 files"
+        case .ps1: ".cue (with its .bin files), .chd or .pbp files"
         case .xbox: "XISO-format .iso files"
         case .ps3: "game folders (each containing PS3_GAME or USRDIR)"
+        default: fileExtensions.sorted().map { "." + $0 }.formatted(.list(type: .or)) + " files"
         }
     }
 
     var symbol: String {
         switch self {
-        case .nes, .snes: "gamecontroller"
-        case .n64: "gamecontroller.fill"
+        case .nes, .snes, .genesis: "gamecontroller"
+        case .n64, .gamecube, .wii: "gamecontroller.fill"
+        case .gb, .gbc, .gba: "rectangle.portrait"
+        case .ds: "rectangle.split.1x2"
+        case .ps1, .ps2, .ps3, .psp: "playstation.logo"
         case .xbox: "xbox.logo"
-        case .ps3: "playstation.logo"
         }
     }
 
-    /// The libretro core RetroArch uses for this system, if it is a RetroArch system.
-    var retroArchCore: (file: String, name: String)? {
+    /// Ways to play this system, most preferred first. The first one installed is used.
+    var backends: [Backend] {
         switch self {
-        case .nes: ("mesen_libretro.dylib", "Mesen")
-        case .snes: ("snes9x_libretro.dylib", "Snes9x")
-        case .n64: ("mupen64plus_next_libretro.dylib", "Mupen64Plus-Next")
-        case .xbox, .ps3: nil
+        case .nes: [.retroArch([Core("mesen", "Mesen"), Core("fceumm", "FCEUmm"), Core("nestopia", "Nestopia")]), .openEmu]
+        case .snes: [.retroArch([Core("snes9x", "Snes9x"), Core("bsnes", "bsnes")]), .openEmu]
+        case .n64: [.retroArch([Core("mupen64plus_next", "Mupen64Plus-Next"), Core("parallel_n64", "ParaLLEl N64")]), .openEmu]
+        case .gamecube, .wii: [.app(.dolphin, arguments: ["-b", "-e"])]
+        case .gb, .gbc: [.retroArch([Core("gambatte", "Gambatte"), Core("sameboy", "SameBoy"), Core("mgba", "mGBA")]), .openEmu]
+        case .gba: [.retroArch([Core("mgba", "mGBA"), Core("vba_next", "VBA Next")]), .openEmu]
+        case .ds: [.app(.melonDS, arguments: []), .retroArch([Core("melonds", "melonDS"), Core("desmume", "DeSmuME")]), .openEmu]
+        case .genesis: [.retroArch([Core("genesis_plus_gx", "Genesis Plus GX"), Core("picodrive", "PicoDrive")]), .openEmu]
+        case .ps1: [.retroArch([Core("swanstation", "SwanStation"), Core("pcsx_rearmed", "PCSX ReARMed"), Core("mednafen_psx", "Beetle PSX")]), .openEmu]
+        case .ps2: [.app(.pcsx2, arguments: ["-batch", "--"])]
+        case .ps3: [.app(.rpcs3, arguments: ["--no-gui"])]
+        case .psp: [.app(.ppsspp, arguments: []), .retroArch([Core("ppsspp", "PPSSPP")]), .openEmu]
+        case .xbox: [.app(.xemu, arguments: ["-dvd_path"])]
+        }
+    }
+
+    /// Extra setup the emulator needs before games will boot.
+    var setupNote: String? {
+        switch self {
+        case .ps1: "Needs a PS1 BIOS dumped from your console."
+        case .ps2: "PCSX2 needs a BIOS dumped from your PS2; it asks for it on first launch."
+        case .ps3: "Install the PS3 firmware in RPCS3 (File › Install Firmware) first."
+        case .xbox: "Set up your BIOS, MCPX boot ROM and hard disk image in xemu's settings first."
+        default: nil
+        }
+    }
+}
+
+struct Core {
+    let file: String
+    let name: String
+
+    init(_ id: String, _ name: String) {
+        file = "\(id)_libretro.dylib"
+        self.name = name
+    }
+}
+
+enum Backend {
+    case retroArch([Core])
+    case openEmu
+    /// A standalone emulator; the game path is appended after `arguments`.
+    case app(Emulator, arguments: [String])
+
+    var emulator: Emulator {
+        switch self {
+        case .retroArch: .retroArch
+        case .openEmu: .openEmu
+        case .app(let emulator, _): emulator
         }
     }
 }
 
 enum Emulator: String, CaseIterable, Identifiable {
-    case retroArch, openEmu, xemu, rpcs3
+    case openEmu, retroArch, dolphin, melonDS, pcsx2, rpcs3, ppsspp, xemu
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .retroArch: "RetroArch"
         case .openEmu: "OpenEmu"
-        case .xemu: "xemu"
+        case .retroArch: "RetroArch"
+        case .dolphin: "Dolphin"
+        case .melonDS: "melonDS"
+        case .pcsx2: "PCSX2"
         case .rpcs3: "RPCS3"
+        case .ppsspp: "PPSSPP"
+        case .xemu: "xemu"
         }
     }
 
     var covers: String {
-        switch self {
-        case .retroArch, .openEmu: "NES, SNES, N64"
-        case .xemu: "Xbox"
-        case .rpcs3: "PS3"
-        }
+        GameSystem.allCases
+            .filter { $0.backends.contains { $0.emulator == self } }
+            .map(\.folderName)
+            .joined(separator: ", ")
     }
 
-    private var appName: String { "\(displayName).app" }
-
-    private var executableName: String {
+    private var appNames: [String] {
         switch self {
-        case .retroArch: "RetroArch"
-        case .openEmu: "OpenEmu"
-        case .xemu: "xemu"
-        case .rpcs3: "rpcs3"
+        case .ppsspp: ["PPSSPPSDL.app", "PPSSPP.app"]
+        default: ["\(displayName).app"]
         }
     }
 
     var downloadURL: URL {
         switch self {
-        case .retroArch: URL(string: "https://www.retroarch.com/?page=platforms")!
         case .openEmu: URL(string: "https://openemu.org")!
-        case .xemu: URL(string: "https://xemu.app/docs/download/")!
+        case .retroArch: URL(string: "https://www.retroarch.com/?page=platforms")!
+        case .dolphin: URL(string: "https://dolphin-emu.org/download/")!
+        case .melonDS: URL(string: "https://melonds.kuribo64.net/downloads.php")!
+        case .pcsx2: URL(string: "https://pcsx2.net/downloads")!
         case .rpcs3: URL(string: "https://rpcs3.net/download")!
+        case .ppsspp: URL(string: "https://www.ppsspp.org/download/")!
+        case .xemu: URL(string: "https://xemu.app/docs/download/")!
         }
     }
 
     var appURL: URL? {
         let fm = FileManager.default
         let dirs = [URL(filePath: "/Applications"), fm.homeDirectoryForCurrentUser.appending(path: "Applications")]
-        return dirs.map { $0.appending(path: appName) }.first { fm.fileExists(atPath: $0.path) }
+        return dirs.flatMap { dir in appNames.map { dir.appending(path: $0) } }
+            .first { fm.fileExists(atPath: $0.path) }
     }
 
     var executableURL: URL? {
-        appURL?.appending(path: "Contents/MacOS/\(executableName)")
+        appURL.flatMap { Bundle(url: $0)?.executableURL }
     }
 
     var isInstalled: Bool { appURL != nil }
@@ -136,59 +216,56 @@ enum Launcher {
     static let retroArchCoresDir = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Library/Application Support/RetroArch/cores")
 
-    private static func retroArchCoreURL(for system: GameSystem) -> URL? {
-        guard let core = system.retroArchCore else { return nil }
+    private struct Plan {
+        let label: String
+        let start: (URL) throws -> Void
+    }
+
+    /// The first installed backend for this system, ready to start a game.
+    private static func plan(for system: GameSystem) -> Plan? {
+        for backend in system.backends {
+            switch backend {
+            case .retroArch(let cores):
+                guard let exe = Emulator.retroArch.executableURL,
+                      let core = cores.first(where: { coreURL($0) != nil }),
+                      let url = coreURL(core) else { continue }
+                return Plan(label: "RetroArch (\(core.name))") { try run(exe, ["-L", url.path, $0.path]) }
+            case .openEmu:
+                guard let app = Emulator.openEmu.appURL else { continue }
+                return Plan(label: "OpenEmu") {
+                    NSWorkspace.shared.open([$0], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+                }
+            case .app(let emulator, let arguments):
+                guard let exe = emulator.executableURL else { continue }
+                return Plan(label: emulator.displayName) { try run(exe, arguments + [$0.path]) }
+            }
+        }
+        return nil
+    }
+
+    private static func coreURL(_ core: Core) -> URL? {
         let url = retroArchCoresDir.appending(path: core.file)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     /// One line describing whether games for this system can be launched, and how.
     static func readiness(for system: GameSystem) -> (ready: Bool, message: String) {
-        switch system {
-        case .nes, .snes, .n64:
-            let coreName = system.retroArchCore!.name
-            if Emulator.retroArch.isInstalled, retroArchCoreURL(for: system) != nil {
-                return (true, "Plays with RetroArch (\(coreName))")
-            }
-            if Emulator.openEmu.isInstalled {
-                return (true, "Plays with OpenEmu")
-            }
-            if Emulator.retroArch.isInstalled {
-                return (false, "RetroArch is missing the \(coreName) core. In RetroArch open Main Menu › Online Updater › Core Downloader and install it.")
-            }
-            return (false, "Install OpenEmu or RetroArch to play \(system.displayName) games.")
-        case .xbox:
-            return Emulator.xemu.isInstalled
-                ? (true, "Plays with xemu. Set up your BIOS, MCPX boot ROM and hard disk image in xemu's settings first.")
-                : (false, "Install xemu to play Xbox games.")
-        case .ps3:
-            return Emulator.rpcs3.isInstalled
-                ? (true, "Plays with RPCS3. Install the PS3 firmware in RPCS3 (File › Install Firmware) first.")
-                : (false, "Install RPCS3 to play PS3 games.")
+        if let plan = plan(for: system) {
+            return (true, (["Plays with \(plan.label)."] + [system.setupNote].compactMap { $0 }).joined(separator: " "))
         }
+        for case .retroArch(let cores) in system.backends where Emulator.retroArch.isInstalled {
+            let names = cores.map(\.name).formatted(.list(type: .or))
+            return (false, "RetroArch needs the \(names) core. In RetroArch open Main Menu › Online Updater › Core Downloader and install it.")
+        }
+        let emulators = system.backends.map(\.emulator.displayName).formatted(.list(type: .or))
+        return (false, "Install \(emulators) to play \(system.displayName) games.")
     }
 
     static func launch(_ game: Game) throws {
-        switch game.system {
-        case .nes, .snes, .n64:
-            if let exe = Emulator.retroArch.executableURL, let core = retroArchCoreURL(for: game.system) {
-                try run(exe, ["-L", core.path, game.bootURL.path])
-            } else if let app = Emulator.openEmu.appURL {
-                NSWorkspace.shared.open([game.bootURL], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
-            } else {
-                throw LaunchError.notReady(readiness(for: game.system).message)
-            }
-        case .xbox:
-            guard let exe = Emulator.xemu.executableURL else {
-                throw LaunchError.notReady(readiness(for: .xbox).message)
-            }
-            try run(exe, ["-dvd_path", game.bootURL.path])
-        case .ps3:
-            guard let exe = Emulator.rpcs3.executableURL else {
-                throw LaunchError.notReady(readiness(for: .ps3).message)
-            }
-            try run(exe, ["--no-gui", game.bootURL.path])
+        guard let plan = plan(for: game.system) else {
+            throw LaunchError.notReady(readiness(for: game.system).message)
         }
+        try plan.start(game.bootURL)
     }
 
     private static func run(_ executable: URL, _ arguments: [String]) throws {

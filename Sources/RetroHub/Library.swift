@@ -9,22 +9,54 @@ struct Game: Identifiable, Hashable {
     let localCovers: [URL]
 
     var id: URL { bootURL }
+    fileprivate var key: String { bootURL.path }
+}
+
+enum SidebarItem: Hashable {
+    case favorites, recent
+    case system(GameSystem)
+
+    static let all: [SidebarItem] = [.favorites, .recent] + GameSystem.allCases.map(SidebarItem.system)
+
+    var title: String {
+        switch self {
+        case .favorites: "Favorites"
+        case .recent: "Recently Played"
+        case .system(let system): system.displayName
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .favorites: "star"
+        case .recent: "clock"
+        case .system(let system): system.symbol
+        }
+    }
 }
 
 @MainActor
 final class Library: ObservableObject {
     private static let rootKey = "libraryRoot"
+    private static let favoritesKey = "favorites"
+    private static let lastPlayedKey = "lastPlayed"
+    private static let recentLimit = 24
 
     @Published private(set) var root: URL
     @Published private(set) var games: [GameSystem: [Game]] = [:]
+    @Published private(set) var favorites: Set<String>
+    @Published private(set) var lastPlayed: [String: Date]
     @Published var launchError: String?
 
     init() {
-        if let path = UserDefaults.standard.string(forKey: Self.rootKey) {
+        let defaults = UserDefaults.standard
+        if let path = defaults.string(forKey: Self.rootKey) {
             root = URL(filePath: path)
         } else {
             root = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Games")
         }
+        favorites = Set(defaults.stringArray(forKey: Self.favoritesKey) ?? [])
+        lastPlayed = defaults.dictionary(forKey: Self.lastPlayedKey) as? [String: Date] ?? [:]
         createFolders()
         rescan()
     }
@@ -52,9 +84,38 @@ final class Library: ObservableObject {
         })
     }
 
+    func games(for item: SidebarItem) -> [Game] {
+        switch item {
+        case .system(let system):
+            return games[system] ?? []
+        case .favorites:
+            return GameSystem.allCases.flatMap { games[$0] ?? [] }.filter { favorites.contains($0.key) }
+        case .recent:
+            let played = GameSystem.allCases.flatMap { games[$0] ?? [] }.filter { lastPlayed[$0.key] != nil }
+            return Array(played.sorted { lastPlayed[$0.key]! > lastPlayed[$1.key]! }.prefix(Self.recentLimit))
+        }
+    }
+
+    func isFavorite(_ game: Game) -> Bool {
+        favorites.contains(game.key)
+    }
+
+    func toggleFavorite(_ game: Game) {
+        if favorites.remove(game.key) == nil {
+            favorites.insert(game.key)
+        }
+        UserDefaults.standard.set(Array(favorites), forKey: Self.favoritesKey)
+    }
+
+    func lastPlayed(_ game: Game) -> Date? {
+        lastPlayed[game.key]
+    }
+
     func play(_ game: Game) {
         do {
             try Launcher.launch(game)
+            lastPlayed[game.key] = .now
+            UserDefaults.standard.set(lastPlayed, forKey: Self.lastPlayedKey)
         } catch {
             launchError = error.localizedDescription
         }
@@ -85,8 +146,36 @@ final class Library: ObservableObject {
         return dirs.compactMap { dir in
             let candidates = ["PS3_GAME/USRDIR/EBOOT.BIN", "USRDIR/EBOOT.BIN"].map { dir.appending(path: $0) }
             guard let eboot = candidates.first(where: { fm.fileExists(atPath: $0.path) }) else { return nil }
+            let title = ["PS3_GAME/PARAM.SFO", "PARAM.SFO"].lazy
+                .compactMap { sfoTitle(at: dir.appending(path: $0)) }
+                .first ?? dir.lastPathComponent
             let covers = ["cover.png", "cover.jpg", "PS3_GAME/ICON0.PNG", "ICON0.PNG"].map { dir.appending(path: $0) }
-            return Game(system: .ps3, title: dir.lastPathComponent, bootURL: eboot, localCovers: covers)
+            return Game(system: .ps3, title: title, bootURL: eboot, localCovers: covers)
         }
+    }
+
+    /// Reads the TITLE entry from a PS3 PARAM.SFO file (little-endian key/value table).
+    static func sfoTitle(at url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url), data.count >= 20,
+              data.prefix(4) == Data([0x00, 0x50, 0x53, 0x46]) else { return nil }
+        func u16(_ offset: Int) -> Int { Int(data[offset]) | Int(data[offset + 1]) << 8 }
+        func u32(_ offset: Int) -> Int { u16(offset) | u16(offset + 2) << 16 }
+
+        let keyTable = u32(8), dataTable = u32(12), count = u32(16)
+        for index in 0..<count {
+            let entry = 20 + index * 16
+            let keyStart = keyTable + u16(entry)
+            guard entry + 16 <= data.count, keyStart < data.count,
+                  let keyEnd = data[keyStart...].firstIndex(of: 0) else { return nil }
+            guard String(decoding: data[keyStart..<keyEnd], as: UTF8.self) == "TITLE" else { continue }
+
+            let start = dataTable + u32(entry + 12), length = u32(entry + 4)
+            guard start + length <= data.count else { return nil }
+            let title = String(decoding: data[start..<start + length], as: UTF8.self)
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespaces.union(.controlCharacters))
+            return title.isEmpty ? nil : title
+        }
+        return nil
     }
 }

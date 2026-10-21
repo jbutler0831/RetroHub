@@ -4,8 +4,11 @@ import GameController
 enum ControllerCommand: Equatable {
     case move(dx: Int, dy: Int)
     case play
+    case favorite
+    case back
     case previousSystem
     case nextSystem
+    case toggleCouchMode
 }
 
 /// Turns gamepad presses into library navigation commands. macOS only delivers
@@ -39,6 +42,9 @@ final class ControllerInput: ObservableObject {
             bind(directions.right, .move(dx: 1, dy: 0))
         }
         bind(pad.buttonA, .play)
+        bind(pad.buttonB, .back)
+        bind(pad.buttonY, .favorite)
+        bind(pad.buttonMenu, .toggleCouchMode)
         bind(pad.leftShoulder, .previousSystem)
         bind(pad.rightShoulder, .nextSystem)
     }
