@@ -235,6 +235,11 @@ function renderSetup() {
       </div>
     </div>`;
   const notes = S.systems.filter((s) => s.note);
+  const g = S.graphics;
+  const segmented = (key, options) => `<div class="segmented">${options.map(([value, label]) =>
+    `<button class="${g[key] === value ? 'active' : ''}" data-graphics="${key}" data-value="${esc(JSON.stringify(value))}">${esc(label)}</button>`).join('')}</div>`;
+  const graphicsRow = (title, detail, control) => `<div class="graphics-row">
+      <div class="grow"><strong>${esc(title)}</strong><span>${esc(detail)}</span></div>${control}</div>`;
   content.innerHTML = `<div class="page-backdrop" style="--c:#8e8e93"></div>
     <div class="page-header">${tile('setup', 'big')}
       <div><h2>Setup</h2><div class="page-meta">${installed
@@ -256,6 +261,19 @@ function renderSetup() {
           <div class="grow mono" title="${esc(S.libraryRoot)}">${esc(S.libraryRoot)}</div>
           <button class="button" data-open-folder="">Open</button>
           <button class="button" data-choose-root>Change…</button>
+        </div>
+      </section>
+      <section>
+        <h3>Graphics</h3>
+        <p class="subtitle">Applied when RetroHub starts a game in RetroArch. RetroArch's own settings stay as they are.</p>
+        <div class="panel graphics-panel">
+          ${graphicsRow('Screen filter', 'NES, SNES, Game Boy, GBA and Genesis. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.',
+                        segmented('filter', [['off', 'Off'], ['crt', 'CRT'], ['smooth', 'Smooth HD']]))}
+          ${S.shadersMissing ? `<div class="graphics-warning">Download RetroArch's shaders first: Main Menu › Online Updater › Update Slang Shaders.</div>` : ''}
+          ${graphicsRow('3D resolution', 'N64 and PlayStation. Higher looks sharper but needs a faster computer.',
+                        segmented('scale', [[1, 'Native'], [2, '2×'], [3, '3×'], [4, '4×']]))}
+          ${graphicsRow('Widescreen hack', 'N64 and PlayStation. Shows more of the 3D world in 16:9; some games glitch at the edges.',
+                        segmented('widescreen', [[false, 'Off'], [true, 'On']]))}
         </div>
       </section>
       <section>
@@ -432,7 +450,7 @@ nav.addEventListener('click', (event) => {
 });
 
 async function handleButtons(event) {
-  const target = event.target.closest('[data-download], [data-open-folder], [data-choose-root], [data-locate], [data-play], [data-exit], [data-tab]');
+  const target = event.target.closest('[data-download], [data-open-folder], [data-choose-root], [data-locate], [data-play], [data-exit], [data-tab], [data-graphics]');
   if (!target) return false;
   const d = target.dataset;
   if ('download' in d) api.openDownload(d.download);
@@ -442,6 +460,7 @@ async function handleButtons(event) {
   else if ('play' in d) play(target.closest('[data-id]').dataset.id);
   else if ('exit' in d) setCouch(false);
   else if ('tab' in d) { selection = d.tab; couchIndex = 0; render(); }
+  else if ('graphics' in d) applyState(await api.setGraphics({ [d.graphics]: JSON.parse(d.value) }));
   return true;
 }
 

@@ -7,6 +7,7 @@ const { SYSTEMS, MAKERS, EMULATORS } = require('./systems');
 const { scanLibrary } = require('./library');
 const { availableEmulators, resolve, readiness, launch } = require('./emulators');
 const { coverPath } = require('./covers');
+const graphicsOptions = require('./graphics');
 
 const RECENT_LIMIT = 24;
 
@@ -18,11 +19,13 @@ let settings = {
   favorites: [],
   lastPlayed: {},
   emulatorPaths: {},
+  graphics: { ...graphicsOptions.DEFAULTS },
 };
 
 function loadSettings() {
   try {
-    settings = { ...settings, ...JSON.parse(fs.readFileSync(settingsFile(), 'utf8')) };
+    const saved = JSON.parse(fs.readFileSync(settingsFile(), 'utf8'));
+    settings = { ...settings, ...saved, graphics: { ...graphicsOptions.DEFAULTS, ...saved.graphics } };
   } catch { /* first launch */ }
 }
 
@@ -60,6 +63,9 @@ function state() {
     favorites: settings.favorites,
     lastPlayed: settings.lastPlayed,
     recentLimit: RECENT_LIMIT,
+    graphics: settings.graphics,
+    shadersMissing: graphicsOptions.shadersMissing(resolve(EMULATORS.find((e) => e.id === 'retroarch'), settings.emulatorPaths),
+                                                   settings.graphics),
   };
 }
 
@@ -73,7 +79,7 @@ async function play(id) {
   const game = gamesById.get(id);
   if (!game) return { error: 'That game is no longer in your library.' };
   try {
-    await launch(game, settings.emulatorPaths);
+    await launch(game, settings.emulatorPaths, settings.graphics);
     settings.lastPlayed[id] = Date.now();
     saveSettings();
     sendState();
@@ -97,6 +103,15 @@ ipcMain.handle('state', () => state());
 ipcMain.handle('rescan', () => { rescan(); return state(); });
 ipcMain.handle('play', (_, id) => play(id));
 ipcMain.handle('toggleFavorite', (_, id) => toggleFavorite(id));
+
+ipcMain.handle('setGraphics', (_, changes) => {
+  const next = { ...settings.graphics, ...changes };
+  if (['off', 'crt', 'smooth'].includes(next.filter) && [1, 2, 3, 4].includes(next.scale)) {
+    settings.graphics = { filter: next.filter, scale: next.scale, widescreen: !!next.widescreen };
+    saveSettings();
+  }
+  return state();
+});
 
 ipcMain.handle('cover', async (_, id) => {
   const game = gamesById.get(id);

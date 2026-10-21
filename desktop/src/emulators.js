@@ -5,6 +5,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { SYSTEMS, EMULATORS } = require('./systems');
 const { exists } = require('./library');
+const graphicsOptions = require('./graphics');
 
 const platform = process.platform;
 const home = os.homedir();
@@ -100,7 +101,7 @@ function run(command, args) {
 }
 
 /** The first installed way to play a system: { label, start(gamePath) } or null. */
-function plan(system, customPaths) {
+function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS) {
   for (const backend of system.backends) {
     if (backend.type === 'retroarch') {
       const retroarch = resolve(EMULATORS.find((e) => e.id === 'retroarch'), customPaths);
@@ -111,7 +112,8 @@ function plan(system, customPaths) {
         if (corePath) {
           return {
             label: `RetroArch (${core.name})`,
-            start: (game) => run(retroarch.command, [...retroarch.prefix, '-L', corePath, game]),
+            start: (game) => run(retroarch.command, [...retroarch.prefix, '-L', corePath,
+              ...graphicsOptions.retroArchArgs(system.id, core, retroarch, graphics), game]),
           };
         }
       }
@@ -152,9 +154,9 @@ function readiness(system, customPaths) {
   return { ready: false, summary: 'Setup needed', detail: `Install ${names} to play ${system.name} games.`, missing: ids[0] || null };
 }
 
-async function launch(game, customPaths) {
+async function launch(game, customPaths, graphics) {
   const system = SYSTEMS.find((s) => s.id === game.system);
-  const found = plan(system, customPaths);
+  const found = plan(system, customPaths, graphics);
   if (!found) throw new Error(readiness(system, customPaths).detail);
   try {
     await found.start(game.bootPath);

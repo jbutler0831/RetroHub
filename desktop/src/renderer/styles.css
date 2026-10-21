@@ -388,6 +388,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .mono { font-family: ui-monospace, "SF Mono", Consolas, "DejaVu Sans Mono", monospace; font-size: 13px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.graphics-panel { padding: 4px 16px; }
+.graphics-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; }
+.graphics-row + .graphics-row, .graphics-warning + .graphics-row { border-top: 1px solid var(--border); }
+.graphics-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.graphics-row span { color: var(--text-2); font-size: 13px; }
+.graphics-warning { padding: 0 0 12px; color: #ff9500; font-size: 13px; }
+.segmented { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--selected-row); }
+.segmented button { border: 0; background: none; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--text); }
+.segmented button.active { background: var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
 .bios-list { padding: 6px 16px; }
 .bios-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
 .bios-row strong { width: 130px; flex: none; }

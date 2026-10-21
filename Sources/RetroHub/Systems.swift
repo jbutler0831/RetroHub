@@ -119,10 +119,12 @@ enum GameSystem: String, CaseIterable, Identifiable {
 }
 
 struct Core {
+    let id: String
     let file: String
     let name: String
 
     init(_ id: String, _ name: String) {
+        self.id = id
         file = "\(id)_libretro.dylib"
         self.name = name
     }
@@ -229,7 +231,9 @@ enum Launcher {
                 guard let exe = Emulator.retroArch.executableURL,
                       let core = cores.first(where: { coreURL($0) != nil }),
                       let url = coreURL(core) else { continue }
-                return Plan(label: "RetroArch (\(core.name))") { try run(exe, ["-L", url.path, $0.path]) }
+                return Plan(label: "RetroArch (\(core.name))") {
+                    try run(exe, ["-L", url.path] + RetroArchGraphics.arguments(for: system, core: core) + [$0.path])
+                }
             case .openEmu:
                 guard let app = Emulator.openEmu.appURL else { continue }
                 return Plan(label: "OpenEmu") {

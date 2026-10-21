@@ -35,6 +35,10 @@ struct SetupView: View {
                     }
                 }
 
+                section("Graphics", subtitle: "Applied when RetroHub starts a game in RetroArch. RetroArch's own settings stay as they are.") {
+                    GraphicsCard()
+                }
+
                 section("Controller", subtitle: "PS5 DualSense and Xbox Wireless controllers work over Bluetooth.") {
                     card {
                         HStack(spacing: 14) {
@@ -120,6 +124,58 @@ struct SetupView: View {
         panel.message = "RetroHub will create a folder for each system inside it."
         if panel.runModal() == .OK, let url = panel.url {
             library.setRoot(url)
+        }
+    }
+}
+
+private struct GraphicsCard: View {
+    @AppStorage(Graphics.filterKey) private var filter = ScreenFilter.off
+    @AppStorage(Graphics.scaleKey) private var scale = 1
+    @AppStorage(Graphics.widescreenKey) private var widescreen = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            row("Screen filter", detail: "NES, SNES, Game Boy, GBA and Genesis. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.") {
+                Picker("Screen filter", selection: $filter) {
+                    ForEach(ScreenFilter.allCases) { Text($0.label).tag($0) }
+                }
+            }
+            if filter != .off, RetroArchGraphics.shaderURL(filter) == nil {
+                Label("Download RetroArch's shaders first: Main Menu › Online Updater › Update Slang Shaders.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+            Divider()
+            row("3D resolution", detail: "N64 and PlayStation. Higher looks sharper but needs a faster Mac.") {
+                Picker("3D resolution", selection: $scale) {
+                    ForEach(Graphics.scales, id: \.self) { Text($0 == 1 ? "Native" : "\($0)×").tag($0) }
+                }
+            }
+            Divider()
+            row("Widescreen hack", detail: "N64 and PlayStation. Shows more of the 3D world in 16:9; some games glitch at the edges.") {
+                Toggle("Widescreen hack", isOn: $widescreen)
+                    .toggleStyle(.switch)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.quaternary))
+    }
+
+    private func row<Control: View>(_ title: String, detail: String, @ViewBuilder control: () -> Control) -> some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            control()
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
         }
     }
 }
