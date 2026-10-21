@@ -16,11 +16,46 @@ emulate anything itself; it finds your games and launches them in:
 Also: cover art, favorites, recently played, and a full-screen couch mode
 for controllers (press Menu/Options, or the TV button in the toolbar).
 
+## Downloads
+
+Get the latest version from the Releases page:
+
+- **Mac** (Apple silicon and Intel): `RetroHub.zip`
+- **Windows**: `RetroHub-Setup-<version>.exe` (installer) or `RetroHub-Portable-<version>.exe`
+- **Linux**: `RetroHub-<version>-x86_64.AppImage` (`chmod +x` it, then run)
+
+On Windows and Linux, RetroHub looks for emulators in their usual install
+locations (including Scoop on Windows and Flatpak on Linux). If one isn't found,
+open Setup and click **Locate…** to pick its program file. OpenEmu is Mac-only;
+use RetroArch on Windows and Linux.
+
 ## Build
 
-Requires the Xcode Command Line Tools (`xcode-select --install`).
+**Mac app** (native Swift, in `Sources/`): requires the Xcode Command Line Tools
+(`xcode-select --install`).
 
     ./build.sh
+
+This builds `build/RetroHub.app` and `build/RetroHub.zip` (the file to upload to a
+release) and installs the app to `~/Applications`. By default the app is signed
+ad hoc: it runs on your Mac, but on other Macs Gatekeeper blocks it until the user
+right-clicks it and chooses **Open**. To build one that opens normally anywhere,
+sign it with a Developer ID certificate and notarize it:
+
+    xcrun notarytool store-credentials retrohub --apple-id <you@example.com> --team-id <TEAMID>
+    SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=retrohub ./build.sh
+
+**Windows/Linux app** (Electron, in `desktop/`): requires Node.js 22.
+
+    cd desktop
+    npm install
+    npm start          # run it
+    npm run dist       # build installers for the current OS
+
+Publishing a GitHub release triggers `.github/workflows/desktop.yml`, which builds
+the Mac, Windows and Linux versions and attaches them to the release. The Mac build
+from CI is signed ad hoc, and the Windows build is unsigned, so Windows SmartScreen
+shows "Windows protected your PC" on first run (click **More info** → **Run anyway**).
 
 ## Games folder
 
