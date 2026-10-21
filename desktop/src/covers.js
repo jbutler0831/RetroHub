@@ -1,5 +1,5 @@
 // Box art: a local image next to the game first, then libretro-thumbnails, cached on disk.
-// Mirrors Sources/RetroHub/CoverArt.swift.
+// Mirrors mac/Sources/RetroHub/CoverArt.swift.
 const fs = require('fs');
 const path = require('path');
 const { SYSTEMS } = require('./systems');

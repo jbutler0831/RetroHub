@@ -1,4 +1,4 @@
-/.build/
-/build/
+/mac/.build/
+/mac/build/
+/mac/.swiftpm/
 .DS_Store
-.swiftpm/

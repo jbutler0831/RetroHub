@@ -1,4 +1,4 @@
-// Systems and emulators RetroHub knows about. Mirrors Sources/RetroHub/Systems.swift
+// Systems and emulators RetroHub knows about. Mirrors mac/Sources/RetroHub/Systems.swift
 // in the Mac app, plus where to find each emulator on Windows and Linux.
 
 const retroArch = (...cores) => ({ type: 'retroarch', cores: cores.map(([id, name]) => ({ id, name })) });

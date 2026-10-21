@@ -1,6 +1,6 @@
 # Builds the Mac (native Swift, universal), Windows and Linux (desktop/ folder; x86_64, and
 # arm64 for Raspberry Pi) versions of RetroHub and attaches them to the GitHub release that triggered the run.
-name: Desktop builds
+name: Release builds
 
 on:
   release:
@@ -17,19 +17,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build universal app
-        run: ./build.sh
+        run: mac/build.sh
 
       - uses: actions/upload-artifact@v4
         with:
           name: RetroHub-macOS
-          path: build/RetroHub.zip
+          path: mac/build/RetroHub.zip
           if-no-files-found: error
 
       - name: Attach to release
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" build/RetroHub.zip --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" mac/build/RetroHub.zip --clobber
 
   build:
     strategy:

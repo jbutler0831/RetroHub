@@ -1,4 +1,4 @@
-// Finds games in the library folder. Mirrors Sources/RetroHub/Library.swift.
+// Finds games in the library folder. Mirrors mac/Sources/RetroHub/Library.swift.
 const fs = require('fs');
 const path = require('path');
 const { SYSTEMS } = require('./systems');

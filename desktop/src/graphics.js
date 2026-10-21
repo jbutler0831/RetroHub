@@ -1,5 +1,5 @@
 // Picture options RetroHub passes to RetroArch when it starts a game. Mirrors
-// Sources/RetroHub/Graphics.swift. RetroArch's own settings are left alone: the options only
+// mac/Sources/RetroHub/Graphics.swift. RetroArch's own settings are left alone: the options only
 // apply to games RetroHub launches.
 const fs = require('fs');
 const os = require('os');

@@ -33,19 +33,19 @@ use RetroArch on Windows and Linux.
 
 ## Build
 
-**Mac app** (native Swift, in `Sources/`): requires the Xcode Command Line Tools
+**Mac app** (native Swift, in `mac/`): requires the Xcode Command Line Tools
 (`xcode-select --install`).
 
-    ./build.sh
+    mac/build.sh
 
-This builds `build/RetroHub.app` and `build/RetroHub.zip` (the file to upload to a
+This builds `mac/build/RetroHub.app` and `mac/build/RetroHub.zip` (the file to upload to a
 release) and installs the app to `~/Applications`. By default the app is signed
 ad hoc: it runs on your Mac, but on other Macs Gatekeeper blocks it until the user
 right-clicks it and chooses **Open**. To build one that opens normally anywhere,
 sign it with a Developer ID certificate and notarize it:
 
     xcrun notarytool store-credentials retrohub --apple-id <you@example.com> --team-id <TEAMID>
-    SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=retrohub ./build.sh
+    SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=retrohub mac/build.sh
 
 **Windows/Linux app** (Electron, in `desktop/`): requires Node.js 22.
 
@@ -54,7 +54,7 @@ sign it with a Developer ID certificate and notarize it:
     npm start          # run it
     npm run dist       # build installers for the current OS
 
-Publishing a GitHub release triggers `.github/workflows/desktop.yml`, which builds
+Publishing a GitHub release triggers `.github/workflows/release.yml`, which builds
 the Mac, Windows and Linux (x86_64 and Raspberry Pi) versions and attaches them to the release. The Mac build
 from CI is signed ad hoc, and the Windows build is unsigned, so Windows SmartScreen
 shows "Windows protected your PC" on first run (click **More info** → **Run anyway**).

@@ -1,5 +1,5 @@
 // Draws the RetroHub app icon and writes Resources/AppIcon.icns.
-// Usage: swift scripts/make-icon.swift
+// Usage (from the mac folder): swift scripts/make-icon.swift
 import AppKit
 
 let size: CGFloat = 1024
