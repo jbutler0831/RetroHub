@@ -61,7 +61,48 @@ function scanPS3(system, dir) {
   return games;
 }
 
-/** Reads the TITLE entry from a PS3 PARAM.SFO file (little-endian key/value table). */
+/** PS4 game dumps keep eboot.bin at the top of the folder and their details under sce_sys. */
+function scanPS4(system, dir) {
+  const games = [];
+  for (const entry of listDir(dir)) {
+    if (!entry.isDirectory()) continue;
+    const gameDir = path.join(dir, entry.name);
+    const eboot = path.join(gameDir, 'eboot.bin');
+    if (!exists(eboot)) continue;
+    const title = sfoTitle(path.join(gameDir, 'sce_sys/param.sfo')) || entry.name;
+    const covers = ['cover.png', 'cover.jpg', 'sce_sys/icon0.png'].map((p) => path.join(gameDir, p));
+    games.push(makeGame(system, title, eboot, covers));
+  }
+  return games;
+}
+
+/** Where Vita3K keeps installed games (its default storage location), one folder per title ID. */
+function vita3kAppsDir() {
+  const home = require('os').homedir();
+  if (process.platform === 'darwin') return path.join(home, 'Library/Application Support/Vita3K/Vita3K/ux0/app');
+  if (process.platform === 'win32') return path.join(process.env.APPDATA || path.join(home, 'AppData/Roaming'), 'Vita3K/Vita3K/ux0/app');
+  return path.join(process.env.XDG_DATA_HOME || path.join(home, '.local/share'), 'Vita3K/Vita3K/ux0/app');
+}
+
+/** A system's games folder. PS Vita games live in Vita3K rather than the library. */
+function systemDir(root, system) {
+  return system.id === 'vita' ? vita3kAppsDir() : path.join(root, system.folder);
+}
+
+/** Games installed in Vita3K: one folder per title ID, with details under sce_sys. */
+function scanVita(system, dir) {
+  const games = [];
+  for (const entry of listDir(dir)) {
+    if (!entry.isDirectory()) continue;
+    const gameDir = path.join(dir, entry.name);
+    const sfo = path.join(gameDir, 'sce_sys/param.sfo');
+    if (!exists(sfo)) continue;
+    games.push(makeGame(system, sfoTitle(sfo) || entry.name, gameDir, [path.join(gameDir, 'sce_sys/icon0.png')]));
+  }
+  return games;
+}
+
+/** Reads the TITLE entry from a PS3, PS4 or PS Vita PARAM.SFO file (little-endian key/value table). */
 function sfoTitle(file) {
   let data;
   try { data = fs.readFileSync(file); } catch { return null; }
@@ -86,12 +127,15 @@ function sfoTitle(file) {
 function scanLibrary(root) {
   const result = {};
   for (const system of SYSTEMS) {
-    const dir = path.join(root, system.folder);
-    try { fs.mkdirSync(dir, { recursive: true }); } catch { /* read-only drive: just scan */ }
-    const games = system.id === 'ps3' ? scanPS3(system, dir) : scanFiles(system, dir);
+    const dir = systemDir(root, system);
+    if (system.id !== 'vita') {
+      try { fs.mkdirSync(dir, { recursive: true }); } catch { /* read-only drive: just scan */ }
+    }
+    const scan = { ps3: scanPS3, ps4: scanPS4, vita: scanVita }[system.id] || scanFiles;
+    const games = scan(system, dir);
     result[system.id] = games.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }));
   }
   return result;
 }
 
-module.exports = { scanLibrary, stripTags, sfoTitle, exists };
+module.exports = { scanLibrary, systemDir, stripTags, sfoTitle, exists };

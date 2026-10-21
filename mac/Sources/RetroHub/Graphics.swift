@@ -42,12 +42,13 @@ enum Graphics {
 extension GameSystem {
     /// 2D systems the screen filter applies to.
     var usesScreenFilter: Bool {
-        [.nes, .snes, .gb, .gbc, .gba, .genesis].contains(self)
+        [.nes, .snes, .gb, .gbc, .gba, .genesis, .masterSystem, .gameGear, .segaCD, .sega32x, .saturn,
+         .pce, .neoGeo, .atari2600, .arcade].contains(self)
     }
 
     /// 3D systems whose RetroArch cores can render above native resolution and in widescreen.
     var uses3DEnhancements: Bool {
-        [.n64, .ps1].contains(self)
+        [.n64, .ps1, .dreamcast].contains(self)
     }
 }
 
@@ -112,6 +113,13 @@ enum RetroArchGraphics {
             if widescreen {
                 options["swanstation_GPU_WidescreenHack"] = "true"
                 options["swanstation_Display_AspectRatio"] = "16:9"
+            }
+        case "flycast":
+            // Dreamcast renders at 640x480; these are its 2x, 3x and 4x sizes.
+            if scale > 1 { options["reicast_internal_resolution"] = "\(640 * scale)x\(480 * scale)" }
+            if widescreen {
+                options["reicast_widescreen_hack"] = "enabled"
+                options["reicast_widescreen_cheats"] = "enabled"
             }
         case "mednafen_psx":
             if scale > 1 { options["beetle_psx_internal_resolution"] = "\(power)x" }

@@ -68,6 +68,10 @@ function fileHint(system) {
   if (system.id === 'ps1') return '.cue (with its .bin files), .chd or .pbp files';
   if (system.id === 'xbox') return 'XISO-format .iso files';
   if (system.id === 'ps3') return 'game folders (each containing PS3_GAME or USRDIR)';
+  if (system.id === 'ps4') return 'game folders (each containing eboot.bin and sce_sys)';
+  if (system.id === 'vita') return 'games installed in Vita3K (File › Install .pkg or .vpk); they show up here';
+  if (system.id === 'segacd' || system.id === 'saturn') return '.cue (with its .bin files) or .chd files';
+  if (system.id === 'neogeo' || system.id === 'arcade') return 'FinalBurn Neo ROM sets (.zip), named as the emulator expects';
   return `${orList.format([...system.exts].sort().map((e) => `.${e}`))} files`;
 }
 
@@ -213,7 +217,8 @@ function emptyHtml(system) {
       </div>
       <div class="step">
         <span class="step-number">2</span>
-        <div class="step-text"><strong>Add your games</strong><span>Put ${esc(fileHint(system))} in the ${esc(system.folder)} folder.</span></div>
+        <div class="step-text"><strong>Add your games</strong><span>${system.id === 'vita' ? 'Install them in Vita3K (File › Install .pkg or .vpk); they show up here.'
+          : `Put ${esc(fileHint(system))} in the ${esc(system.folder)} folder.`}</span></div>
         <button class="button" data-open-folder="${system.id}">Open Folder</button>
       </div>
     </div></div>`;
@@ -267,12 +272,12 @@ function renderSetup() {
         <h3>Graphics</h3>
         <p class="subtitle">Applied when RetroHub starts a game in RetroArch. RetroArch's own settings stay as they are.</p>
         <div class="panel graphics-panel">
-          ${graphicsRow('Screen filter', 'NES, SNES, Game Boy, GBA and Genesis. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.',
+          ${graphicsRow('Screen filter', '2D systems such as NES, SNES, Genesis, Game Boy and arcade. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.',
                         segmented('filter', [['off', 'Off'], ['crt', 'CRT'], ['smooth', 'Smooth HD']]))}
           ${S.shadersMissing ? `<div class="graphics-warning">Download RetroArch's shaders first: Main Menu › Online Updater › Update Slang Shaders.</div>` : ''}
-          ${graphicsRow('3D resolution', 'N64 and PlayStation. Higher looks sharper but needs a faster computer.',
+          ${graphicsRow('3D resolution', 'N64, PlayStation and Dreamcast. Higher looks sharper but needs a faster computer.',
                         segmented('scale', [[1, 'Native'], [2, '2×'], [3, '3×'], [4, '4×']]))}
-          ${graphicsRow('Widescreen hack', 'N64 and PlayStation. Shows more of the 3D world in 16:9; some games glitch at the edges.',
+          ${graphicsRow('Widescreen hack', 'N64, PlayStation and Dreamcast. Shows more of the 3D world in 16:9; some games glitch at the edges.',
                         segmented('widescreen', [[false, 'Off'], [true, 'On']]))}
         </div>
       </section>

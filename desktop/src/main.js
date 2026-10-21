@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { SYSTEMS, MAKERS, EMULATORS } = require('./systems');
-const { scanLibrary } = require('./library');
+const { scanLibrary, systemDir } = require('./library');
 const { availableEmulators, resolve, readiness, launch } = require('./emulators');
 const { coverPath } = require('./covers');
 const graphicsOptions = require('./graphics');
@@ -162,7 +162,7 @@ ipcMain.handle('openDownload', (_, id) => {
 
 ipcMain.handle('openFolder', (_, systemId) => {
   const system = SYSTEMS.find((s) => s.id === systemId);
-  shell.openPath(system ? path.join(settings.libraryRoot, system.folder) : settings.libraryRoot);
+  shell.openPath(system ? systemDir(settings.libraryRoot, system) : settings.libraryRoot);
 });
 
 ipcMain.handle('setFullScreen', (_, on) => win?.setFullScreen(!!on));

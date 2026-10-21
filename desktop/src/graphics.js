@@ -17,8 +17,9 @@ const FILTERS = {
 const DEFAULTS = { filter: 'off', scale: 1, widescreen: false };
 
 /** 2D systems the screen filter applies to, and 3D systems that get resolution and widescreen options. */
-const FILTER_SYSTEMS = ['nes', 'snes', 'gb', 'gbc', 'gba', 'genesis'];
-const ENHANCED_SYSTEMS = ['n64', 'ps1'];
+const FILTER_SYSTEMS = ['nes', 'snes', 'gb', 'gbc', 'gba', 'genesis', 'mastersystem', 'gamegear', 'segacd', 'sega32x',
+                        'saturn', 'pce', 'neogeo', 'atari2600', 'arcade'];
+const ENHANCED_SYSTEMS = ['n64', 'ps1', 'dreamcast'];
 
 /** RetroArch's base folder and main config file for an install found by emulators.resolve(). */
 function retroArchPaths(retroarch) {
@@ -86,6 +87,14 @@ function coreOptions(coreId, scale, widescreen) {
       if (widescreen) {
         options.swanstation_GPU_WidescreenHack = 'true';
         options.swanstation_Display_AspectRatio = '16:9';
+      }
+      break;
+    case 'flycast':
+      // Dreamcast renders at 640x480; these are its 2x, 3x and 4x sizes.
+      if (scale > 1) options.reicast_internal_resolution = `${640 * scale}x${480 * scale}`;
+      if (widescreen) {
+        options.reicast_widescreen_hack = 'enabled';
+        options.reicast_widescreen_cheats = 'enabled';
       }
       break;
     case 'mednafen_psx':

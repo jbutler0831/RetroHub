@@ -389,7 +389,9 @@ private struct SystemEmptyState: View {
                 }
                 Divider().padding(.leading, 52)
                 StepRow(number: 2, done: false, title: "Add your games",
-                        detail: "Put \(system.fileHint) in the \(system.folderName) folder.") {
+                        detail: system == .vita
+                            ? "Install them in Vita3K (File › Install .pkg or .vpk); they show up here."
+                            : "Put \(system.fileHint) in the \(system.folderName) folder.") {
                     Button("Open Folder") { NSWorkspace.shared.open(library.folder(for: system)) }
                         .buttonStyle(.bordered)
                 }

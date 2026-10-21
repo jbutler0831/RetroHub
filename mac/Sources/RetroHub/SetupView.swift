@@ -135,7 +135,7 @@ private struct GraphicsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            row("Screen filter", detail: "NES, SNES, Game Boy, GBA and Genesis. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.") {
+            row("Screen filter", detail: "2D systems such as NES, SNES, Genesis, Game Boy and arcade. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.") {
                 Picker("Screen filter", selection: $filter) {
                     ForEach(ScreenFilter.allCases) { Text($0.label).tag($0) }
                 }
@@ -147,13 +147,13 @@ private struct GraphicsCard: View {
                     .foregroundStyle(.orange)
             }
             Divider()
-            row("3D resolution", detail: "N64 and PlayStation. Higher looks sharper but needs a faster Mac.") {
+            row("3D resolution", detail: "N64, PlayStation and Dreamcast. Higher looks sharper but needs a faster Mac.") {
                 Picker("3D resolution", selection: $scale) {
                     ForEach(Graphics.scales, id: \.self) { Text($0 == 1 ? "Native" : "\($0)×").tag($0) }
                 }
             }
             Divider()
-            row("Widescreen hack", detail: "N64 and PlayStation. Shows more of the 3D world in 16:9; some games glitch at the edges.") {
+            row("Widescreen hack", detail: "N64, PlayStation and Dreamcast. Shows more of the 3D world in 16:9; some games glitch at the edges.") {
                 Toggle("Widescreen hack", isOn: $widescreen)
                     .toggleStyle(.switch)
             }

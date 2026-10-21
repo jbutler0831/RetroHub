@@ -1,17 +1,26 @@
 # RetroHub
 
-One library for NES, SNES, N64, Xbox and PS3 games on macOS. RetroHub does not
+One library for your retro and console games, from NES to PS4, on Mac, Windows, Linux and Raspberry Pi. RetroHub does not
 emulate anything itself; it finds your games and launches them in:
 
 | System | Emulator (first one installed is used) |
 |---|---|
-| NES, SNES, N64, Game Boy, GBC, GBA, Genesis, PS1 | RetroArch or OpenEmu |
+| NES, SNES, N64, Game Boy, GBC, GBA, PS1 | RetroArch or OpenEmu |
+| Master System, Genesis, Sega CD, 32X, Saturn, Game Gear | RetroArch or OpenEmu |
+| Dreamcast | RetroArch (Flycast) |
+| TurboGrafx-16, Atari 2600 | RetroArch or OpenEmu |
+| Arcade, Neo Geo | RetroArch (FinalBurn Neo) |
 | GameCube, Wii | Dolphin |
+| Wii U | Cemu |
 | Nintendo DS | melonDS, RetroArch or OpenEmu |
+| Nintendo 3DS | Azahar or RetroArch |
 | PS2 | PCSX2 |
 | PS3 | RPCS3 |
+| PS4 | shadPS4 (early: many games don't run yet) |
 | PSP | PPSSPP, RetroArch or OpenEmu |
+| PS Vita | Vita3K (games are installed in Vita3K and listed from there) |
 | Xbox (original) | xemu |
+| Xbox 360 | Xenia Canary (Windows and Linux only) |
 
 Also: cover art, favorites, recently played, and a full-screen couch mode
 for controllers (press Menu/Options, or the TV button in the toolbar).
@@ -62,10 +71,16 @@ shows "Windows protected your PC" on first run (click **More info** → **Run an
 ## Games folder
 
 Defaults to `~/Games` (change it from the toolbar). RetroHub creates one folder
-per system (NES, SNES, N64, GameCube, Wii, GB, GBC, GBA, DS, Genesis, PS1, PS2,
-PS3, PSP, Xbox); each empty system shows which file types it expects. PS3 games
-go in one folder per game, containing PS3_GAME/ or USRDIR/.
+per system (for example NES, SNES, N64, Genesis, Dreamcast, Arcade, PS2); each empty
+system shows which file types it expects. PS Vita is the exception: install games in
+Vita3K and RetroHub lists them. PS3 games
+go in one folder per game, containing PS3_GAME/ or USRDIR/; PS4 games go in one folder
+per game, containing eboot.bin and sce_sys/.
 
 Use dumps of games you own. xemu also needs BIOS, MCPX boot ROM and HDD image
 files set in its settings; PS1 and PCSX2 need a console BIOS; RPCS3 needs the PS3 firmware from Sony's site
-(File › Install Firmware).
+(File › Install Firmware); some PS4 games need firmware modules from your own PS4.
+
+shadPS4 comes as a plain program rather than an installer. On a Mac, unzip it into
+`Applications/shadPS4/`; on Windows, into `C:\shadPS4\`; on Linux, put the AppImage
+on your PATH. Anywhere else works too: click **Locate…** in Setup (Windows and Linux).

@@ -12,7 +12,7 @@ const home = os.homedir();
 
 /** Emulators that exist on this OS (OpenEmu is Mac-only). */
 function availableEmulators() {
-  return EMULATORS.filter((e) => (platform === 'darwin' ? e.mac : platform === 'win32' ? e.win || e.scoop : e.linux || e.flatpak));
+  return EMULATORS.filter((e) => (platform === 'darwin' ? e.mac || e.macBinary : platform === 'win32' ? e.win || e.scoop : e.linux || e.flatpak));
 }
 
 function expandEnv(p) {
@@ -60,6 +60,10 @@ function resolve(emulator, customPaths) {
         const appPath = path.join(dir, name);
         const command = exists(appPath) && macExecutable(appPath);
         if (command) return { command, prefix: [], display: appPath, appPath };
+      }
+      for (const name of emulator.macBinary || []) {
+        const command = path.join(dir, name);
+        if (exists(command)) return { command, prefix: [], display: command };
       }
     }
   } else if (platform === 'win32') {
@@ -125,7 +129,9 @@ function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS, { fullsc
       const emulator = EMULATORS.find((e) => e.id === backend.emulator);
       const resolved = resolve(emulator, customPaths);
       if (resolved) {
-        return { label: emulator.name, start: (game) => run(resolved.command, [...resolved.prefix, ...backend.args, game]) };
+        // Vita3K runs installed games by title ID, the name of the game's folder.
+        const target = (game) => (emulator.id === 'vita3k' ? path.basename(game) : game);
+        return { label: emulator.name, start: (game) => run(resolved.command, [...resolved.prefix, ...backend.args, target(game)]) };
       }
     }
   }
@@ -151,7 +157,9 @@ function readiness(system, customPaths) {
   }
   const ids = backends.map((b) => (b.type === 'app' ? b.emulator : b.type));
   const names = listFormat.format(ids.map((id) => EMULATORS.find((e) => e.id === id).name));
-  return { ready: false, summary: 'Setup needed', detail: `Install ${names} to play ${system.name} games.`, missing: ids[0] || null };
+  const notes = ids.map((id) => EMULATORS.find((e) => e.id === id).installNote?.[platform]).filter(Boolean);
+  const detail = [`Install ${names} to play ${system.name} games.`, ...notes].join(' ');
+  return { ready: false, summary: 'Setup needed', detail, missing: ids[0] || null };
 }
 
 async function launch(game, customPaths, graphics, options) {

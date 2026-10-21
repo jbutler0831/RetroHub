@@ -3,7 +3,7 @@ import Foundation
 struct Game: Identifiable, Hashable {
     let system: GameSystem
     let title: String
-    /// The file handed to the emulator: the ROM/ISO itself, or a PS3 game's EBOOT.BIN.
+    /// The file handed to the emulator: the ROM/ISO itself, or a PS3 or PS4 game's EBOOT.BIN.
     let bootURL: URL
     /// Images that override downloaded cover art, in order of preference.
     let localCovers: [URL]
@@ -96,8 +96,12 @@ final class Library: ObservableObject {
     }
 
     func folder(for system: GameSystem) -> URL {
-        root.appending(path: system.folderName)
+        system == .vita ? Self.vita3KAppsDir : root.appending(path: system.folderName)
     }
+
+    /// Where Vita3K keeps installed games, one folder per title ID (its default storage location).
+    static let vita3KAppsDir = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: "Library/Application Support/Vita3K/Vita3K/ux0/app")
 
     func setRoot(_ url: URL) {
         root = url
@@ -107,7 +111,7 @@ final class Library: ObservableObject {
     }
 
     func createFolders() {
-        for system in GameSystem.allCases {
+        for system in GameSystem.allCases where system != .vita {
             try? FileManager.default.createDirectory(at: folder(for: system), withIntermediateDirectories: true)
         }
     }
@@ -158,7 +162,12 @@ final class Library: ObservableObject {
     }
 
     private static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
-        let games = system == .ps3 ? scanPS3(folder) : scanFiles(system, folder)
+        let games = switch system {
+        case .ps3: scanPS3(folder)
+        case .ps4: scanPS4(folder)
+        case .vita: scanVita(folder)
+        default: scanFiles(system, folder)
+        }
         return games.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
@@ -190,7 +199,34 @@ final class Library: ObservableObject {
         }
     }
 
-    /// Reads the TITLE entry from a PS3 PARAM.SFO file (little-endian key/value table).
+    /// PS4 game dumps keep eboot.bin at the top of the folder and their details under sce_sys.
+    private static func scanPS4(_ folder: URL) -> [Game] {
+        let fm = FileManager.default
+        let dirs = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil,
+                                                options: [.skipsHiddenFiles])) ?? []
+        return dirs.compactMap { dir in
+            let eboot = dir.appending(path: "eboot.bin")
+            guard fm.fileExists(atPath: eboot.path) else { return nil }
+            let title = sfoTitle(at: dir.appending(path: "sce_sys/param.sfo")) ?? dir.lastPathComponent
+            let covers = ["cover.png", "cover.jpg", "sce_sys/icon0.png"].map { dir.appending(path: $0) }
+            return Game(system: .ps4, title: title, bootURL: eboot, localCovers: covers)
+        }
+    }
+
+    /// Games installed in Vita3K: one folder per title ID, with details under sce_sys.
+    private static func scanVita(_ folder: URL) -> [Game] {
+        let fm = FileManager.default
+        let dirs = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil,
+                                                options: [.skipsHiddenFiles])) ?? []
+        return dirs.compactMap { dir in
+            let sfo = dir.appending(path: "sce_sys/param.sfo")
+            guard fm.fileExists(atPath: sfo.path) else { return nil }
+            return Game(system: .vita, title: sfoTitle(at: sfo) ?? dir.lastPathComponent, bootURL: dir,
+                        localCovers: [dir.appending(path: "sce_sys/icon0.png")])
+        }
+    }
+
+    /// Reads the TITLE entry from a PS3, PS4 or PS Vita PARAM.SFO file (little-endian key/value table).
     static func sfoTitle(at url: URL) -> String? {
         guard let data = try? Data(contentsOf: url), data.count >= 20,
               data.prefix(4) == Data([0x00, 0x50, 0x53, 0x46]) else { return nil }
