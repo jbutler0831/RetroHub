@@ -53,8 +53,8 @@ sign it with a Developer ID certificate and notarize it:
     npm run dist       # build installers for the current OS
 
 Publishing a GitHub release triggers `.github/workflows/desktop.yml`, which builds
-the Windows and Linux versions and attaches them to the release; upload the Mac
-`build/RetroHub.zip` yourself. The Windows build is unsigned, so Windows SmartScreen
+the Mac, Windows and Linux versions and attaches them to the release. The Mac build
+from CI is signed ad hoc, and the Windows build is unsigned, so Windows SmartScreen
 shows "Windows protected your PC" on first run (click **More info** → **Run anyway**).
 
 ## Games folder
