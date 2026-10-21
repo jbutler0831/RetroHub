@@ -1,0 +1,56 @@
+{
+  "name": "retrohub",
+  "productName": "RetroHub",
+  "version": "1.2.0",
+  "description": "One library for your retro and console games",
+  "main": "src/main.js",
+  "author": "jbutler0831",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "build": {
+    "appId": "io.github.jbutler0831.retrohub",
+    "productName": "RetroHub",
+    "files": [
+      "src/**/*"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "RetroHub-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "RetroHub-Portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "icon": "build/icon.png",
+      "artifactName": "RetroHub-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": "dir",
+      "icon": "build/icon.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  }
+}
