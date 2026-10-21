@@ -28,8 +28,7 @@ struct CouchView: View {
                 Color.clear
                     .overlay { CoverView(game: current, fill: true) }
                     .clipped()
-                    .blur(radius: 50)
-                    .opacity(0.45)
+                    .opacity(0.5)
                     .id(current.id)
                     .transition(.opacity)
             }
@@ -135,7 +134,7 @@ struct CouchView: View {
     private func details(for game: Game) -> some View {
         VStack(spacing: 10) {
             HStack(spacing: 12) {
-                Text(game.title).font(.system(size: 34, weight: .bold))
+                Text(game.displayTitle).font(.system(size: 34, weight: .bold))
                 if library.isFavorite(game) {
                     Image(systemName: "star.fill").font(.title).foregroundStyle(.yellow)
                 }

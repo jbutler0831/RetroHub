@@ -10,26 +10,47 @@ struct Game: Identifiable, Hashable {
 
     var id: URL { bootURL }
     fileprivate var key: String { bootURL.path }
+
+    /// The title without dump tags like "(USA)" or "[!]", and with "Legend of Zelda, The"
+    /// turned back into "The Legend of Zelda".
+    var displayTitle: String {
+        var name = title.strippingTags
+        for article in ["The", "A", "An"] where name.hasSuffix(", \(article)") {
+            name = "\(article) " + name.dropLast(article.count + 2)
+        }
+        return name.isEmpty ? title : name
+    }
+}
+
+extension String {
+    /// Removes parenthesized and bracketed tags, e.g. "Contra (USA) [!]" → "Contra".
+    var strippingTags: String {
+        replacingOccurrences(of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+    }
 }
 
 enum SidebarItem: Hashable {
-    case favorites, recent
+    case favorites, recent, setup
     case system(GameSystem)
 
+    /// The game lists, in the order the controller cycles through them.
     static let all: [SidebarItem] = [.favorites, .recent] + GameSystem.allCases.map(SidebarItem.system)
 
     var title: String {
         switch self {
         case .favorites: "Favorites"
         case .recent: "Recently Played"
+        case .setup: "Setup"
         case .system(let system): system.displayName
         }
     }
 
     var symbol: String {
         switch self {
-        case .favorites: "star"
-        case .recent: "clock"
+        case .favorites: "star.fill"
+        case .recent: "clock.fill"
+        case .setup: "wrench.and.screwdriver.fill"
         case .system(let system): system.symbol
         }
     }
@@ -88,6 +109,8 @@ final class Library: ObservableObject {
         switch item {
         case .system(let system):
             return games[system] ?? []
+        case .setup:
+            return []
         case .favorites:
             return GameSystem.allCases.flatMap { games[$0] ?? [] }.filter { favorites.contains($0.key) }
         case .recent:

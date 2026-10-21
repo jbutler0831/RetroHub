@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import CoreImage
 
 /// Finds box art for a game: a local image next to the game first, then the
 /// libretro-thumbnails library, cached on disk.
@@ -40,14 +41,24 @@ enum CoverArt {
         return nil
     }
 
-    /// libretro-thumbnails uses No-Intro names such as "Super Mario Bros. (World)",
-    /// so also try the title with its tags stripped and common regions added.
+    /// A small, heavily blurred copy of the art, for full-screen backdrops.
+    static func blurred(_ data: Data) async -> CGImage? {
+        guard let input = CIImage(data: data) else { return nil }
+        let scale = 240 / max(input.extent.width, 1)
+        let small = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let blurred = small.clampedToExtent().applyingGaussianBlur(sigma: 14).cropped(to: small.extent)
+        return CIContext().createCGImage(blurred, from: small.extent)
+    }
+
+    /// libretro-thumbnails uses No-Intro names such as "Super Mario Bros. (World)" and
+    /// "Legend of Zelda, The (USA)", so also try the bare title with common regions added.
     private static func candidateNames(for title: String) -> [String] {
-        let base = title
-            .replacingOccurrences(of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
+        let base = title.strippingTags
+        var bases = [base]
+        if base.hasPrefix("The ") { bases.append(String(base.dropFirst(4)) + ", The") }
         var seen = Set<String>()
-        return ([title] + regions.map { "\(base) (\($0))" }).filter { seen.insert($0).inserted }
+        return ([title] + bases.flatMap { base in regions.map { "\(base) (\($0))" } })
+            .filter { seen.insert($0).inserted }
     }
 
     /// The thumbnail server replaces these characters with underscores.

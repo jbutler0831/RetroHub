@@ -8,8 +8,9 @@ BIN="$(swift build -c release --show-bin-path)/RetroHub"
 
 APP=build/RetroHub.app
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/RetroHub"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp Info.plist "$APP/Contents/Info.plist"
 codesign --force --sign - "$APP"
 

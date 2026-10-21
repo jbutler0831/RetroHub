@@ -248,22 +248,34 @@ enum Launcher {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    /// One line describing whether games for this system can be launched, and how.
-    static func readiness(for system: GameSystem) -> (ready: Bool, message: String) {
+    struct Readiness {
+        let ready: Bool
+        /// Short status, e.g. "Plays with Dolphin" or "Setup needed".
+        let summary: String
+        let detail: String?
+        /// The emulator to download when nothing that plays this system is installed.
+        let missing: Emulator?
+    }
+
+    static func readiness(for system: GameSystem) -> Readiness {
         if let plan = plan(for: system) {
-            return (true, (["Plays with \(plan.label)."] + [system.setupNote].compactMap { $0 }).joined(separator: " "))
+            return Readiness(ready: true, summary: "Plays with \(plan.label)", detail: system.setupNote, missing: nil)
         }
         for case .retroArch(let cores) in system.backends where Emulator.retroArch.isInstalled {
             let names = cores.map(\.name).formatted(.list(type: .or))
-            return (false, "RetroArch needs the \(names) core. In RetroArch open Main Menu › Online Updater › Core Downloader and install it.")
+            return Readiness(ready: false, summary: "Setup needed",
+                             detail: "RetroArch needs the \(names) core. In RetroArch open Main Menu › Online Updater › Core Downloader and install it.",
+                             missing: nil)
         }
         let emulators = system.backends.map(\.emulator.displayName).formatted(.list(type: .or))
-        return (false, "Install \(emulators) to play \(system.displayName) games.")
+        return Readiness(ready: false, summary: "Setup needed",
+                         detail: "Install \(emulators) to play \(system.displayName) games.",
+                         missing: system.backends.first?.emulator)
     }
 
     static func launch(_ game: Game) throws {
         guard let plan = plan(for: game.system) else {
-            throw LaunchError.notReady(readiness(for: game.system).message)
+            throw LaunchError.notReady(readiness(for: game.system).detail ?? "No emulator is set up for this system.")
         }
         try plan.start(game.bootURL)
     }
