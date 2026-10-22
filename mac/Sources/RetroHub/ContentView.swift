@@ -10,9 +10,10 @@ struct ContentView: View {
     @EnvironmentObject private var controller: ControllerInput
     @EnvironmentObject private var navigator: Navigator
     @State private var search = ""
-    /// The game last picked in each list, so going back to a list lands on it again.
-    @State private var pickedGames: [SidebarItem: Game.ID] = [:]
     @FocusState private var focus: FocusArea?
+    #if DEBUG
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     /// Space under the sidebar list for the controller status.
     private static let controllerStatusHeight: CGFloat = 56
@@ -21,7 +22,7 @@ struct ContentView: View {
         Group {
             if navigator.couchMode {
                 CouchView(item: navigator.selection ?? .system(.nes), items: navigator.couchItems(library),
-                          pickedGames: $pickedGames, onSelect: { navigator.selection = $0 },
+                          pickedGames: $navigator.pickedGames, onSelect: { navigator.selection = $0 },
                           onCycle: { navigator.cycle($0, library: library) },
                           onExit: { navigator.setCouchMode(false, library: library) })
             } else {
@@ -48,6 +49,12 @@ struct ContentView: View {
         } message: {
             Text(library.launchError ?? "")
         }
+        #if DEBUG
+        .onAppear {
+            ControllerDiagnostics.shared.attach(controller: controller, navigator: navigator, library: library)
+            if ControllerDiagnostics.requested { openWindow(id: ControllerDiagnostics.windowID) }
+        }
+        #endif
     }
 
     private var browser: some View {
@@ -118,7 +125,7 @@ struct ContentView: View {
     }
 
     private func pickedGame(for item: SidebarItem) -> Binding<Game.ID?> {
-        Binding(get: { pickedGames[item] }, set: { pickedGames[item] = $0 })
+        Binding(get: { navigator.pickedGames[item] }, set: { navigator.pickedGames[item] = $0 })
     }
 }
 

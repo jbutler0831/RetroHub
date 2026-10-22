@@ -53,6 +53,14 @@ struct RetroHubApp: App {
             SidebarCommands()
             BrowserCommands(navigator: navigator, library: library, appearance: $appearance)
         }
+        #if DEBUG
+        // Listed in the Window menu. It only shows what the controller does; it doesn't act on it.
+        Window("Controller Diagnostics", id: ControllerDiagnostics.windowID) {
+            ControllerDiagnosticsView()
+        }
+        .defaultSize(width: 680, height: 460)
+        .defaultPosition(.topTrailing)
+        #endif
     }
 }
 

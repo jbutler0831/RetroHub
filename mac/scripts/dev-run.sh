@@ -7,6 +7,10 @@
 #
 # The games folder is only set when the dev app has none yet, or when RETROHUB_DEV_LIBRARY is
 # given, so changing it in Setup sticks between runs. Output goes to build/dev/logs.
+#
+# Arguments are passed to the app:
+#   scripts/dev-run.sh --controller-diagnostics   also opens Controller Diagnostics, which shows
+#                                                 and logs what each controller press did
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -31,7 +35,11 @@ if [ -n "${RETROHUB_DEV_LIBRARY:-}" ] || ! defaults read "$BUNDLE_ID" libraryRoo
 fi
 
 mkdir -p "$(dirname "$LOG")"
-open --stdout "$PWD/$LOG" --stderr "$PWD/$LOG" "$APP"
+if [ $# -gt 0 ]; then
+    open --stdout "$PWD/$LOG" --stderr "$PWD/$LOG" "$APP" --args "$@"
+else
+    open --stdout "$PWD/$LOG" --stderr "$PWD/$LOG" "$APP"
+fi
 echo "Opened $APP"
 echo "  games folder: $(defaults read "$BUNDLE_ID" libraryRoot)"
 echo "  log:          mac/$LOG"

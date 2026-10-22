@@ -1,7 +1,7 @@
 import Combine
 import GameController
 
-enum ControllerCommand: Equatable {
+enum ControllerCommand: Hashable {
     case move(dx: Int, dy: Int)
     case play
     case favorite
@@ -44,20 +44,20 @@ final class ControllerInput: ObservableObject {
         controllerName = controllers.first.map { $0.vendorName ?? "Controller" }
     }
 
+    /// What each control does; the d-pad and the left stick both move. GameController names
+    /// buttons by position, as on an Xbox controller, so other controllers' labels differ: the
+    /// controller test in docs/JSTAR_SHIFT03_HANDOFF.md records which physical button is which.
+    static func bindings(_ pad: GCExtendedGamepad) -> [(GCControllerButtonInput, ControllerCommand)] {
+        [pad.dpad, pad.leftThumbstick].flatMap { directions in
+            [(directions.up, .move(dx: 0, dy: -1)), (directions.down, .move(dx: 0, dy: 1)),
+             (directions.left, .move(dx: -1, dy: 0)), (directions.right, .move(dx: 1, dy: 0))]
+        } + [(pad.buttonA, .play), (pad.buttonB, .back), (pad.buttonY, .favorite),
+             (pad.buttonMenu, .toggleCouchMode), (pad.leftShoulder, .previousSystem), (pad.rightShoulder, .nextSystem)]
+    }
+
     private func configure(_ controller: GCController) {
         guard let pad = controller.extendedGamepad else { return }
-        for directions in [pad.dpad, pad.leftThumbstick] {
-            bind(directions.up, .move(dx: 0, dy: -1))
-            bind(directions.down, .move(dx: 0, dy: 1))
-            bind(directions.left, .move(dx: -1, dy: 0))
-            bind(directions.right, .move(dx: 1, dy: 0))
-        }
-        bind(pad.buttonA, .play)
-        bind(pad.buttonB, .back)
-        bind(pad.buttonY, .favorite)
-        bind(pad.buttonMenu, .toggleCouchMode)
-        bind(pad.leftShoulder, .previousSystem)
-        bind(pad.rightShoulder, .nextSystem)
+        for (button, command) in Self.bindings(pad) { bind(button, command) }
     }
 
     /// Handlers run on the main queue, GameController's default.

@@ -290,6 +290,27 @@ enum UIChecks {
                 let changed = Set(favorites).symmetricDifference(favoritesBefore)
                 expect(changed.count == 1, "one press of Y toggles one game, once: \(favoritesBefore) → \(favorites)")
             }),
+            Step(name: "controller diagnostics", wait: 1.5, action: {
+                if let item = menuItem(titled: "Controller Diagnostics"), let menu = item.menu {
+                    menu.performActionForItem(at: menu.index(of: item))
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { controller(.nextSystem) }
+            }, check: {
+                let entries = ControllerDiagnostics.shared.entries
+                expect(diagnosticsWindow != nil, "Window › Controller Diagnostics opens it")
+                expect(entries.contains { $0.kind == .input && $0.text.hasSuffix("next system") }, "it records the press")
+                expect(entries.contains { $0.kind == .action && $0.text == "next system" }, "the action it made")
+                expect(entries.contains { $0.kind == .result && $0.text == "showing Super Nintendo" },
+                       "and what that did: \(entries.last { $0.kind == .result }?.text ?? "nothing")")
+                expect(!entries.contains { $0.kind == .check }, "one press made one action")
+                if let diagnosticsWindow { savePicture(String(format: "%02d diagnostics window.png", stepNumber), of: diagnosticsWindow) }
+            }),
+            Step(name: "diagnostics closed", action: {
+                diagnosticsWindow?.performClose(nil)
+                window.makeKeyAndOrderFront(nil)
+            }, check: {
+                expect(diagnosticsWindow == nil && window.isKeyWindow, "closing it leaves the main window active")
+            }),
             Step(name: "Dark again for the relaunch run", action: { chooseInMenu(.dark) }, check: {
                 expect(UserDefaults.standard.string(forKey: AppAppearance.key) == "dark", "Dark is saved")
             }),
@@ -409,6 +430,21 @@ enum UIChecks {
 
     private static func isDark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    private static var diagnosticsWindow: NSWindow? {
+        NSApp.windows.first { $0.isVisible && $0.identifier?.rawValue.hasPrefix(ControllerDiagnostics.windowID) == true }
+    }
+
+    private static func menuItem(titled title: String) -> NSMenuItem? {
+        func search(_ menu: NSMenu?) -> NSMenuItem? {
+            for item in menu?.items ?? [] {
+                if item.title == title { return item }
+                if let found = search(item.submenu) { return found }
+            }
+            return nil
+        }
+        return search(NSApp.mainMenu)
     }
 
     /// An item in View › Appearance.
@@ -557,8 +593,8 @@ enum UIChecks {
         NotificationCenter.default.post(name: ControllerInput.simulatedCommand, object: command)
     }
 
-    private static func savePicture(_ name: String) {
-        guard let folder, let frame = window.contentView?.superview,
+    private static func savePicture(_ name: String, of target: NSWindow? = nil) {
+        guard let folder, let frame = (target ?? window).contentView?.superview,
               let picture = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return }
         frame.cacheDisplay(in: frame.bounds, to: picture)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

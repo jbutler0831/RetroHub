@@ -1,13 +1,16 @@
 import AppKit
 
-/// Which list the window shows and whether couch mode is on. The sidebar, the menu bar, the
-/// keyboard and the controller's LB, RB and Menu buttons all change them through here, so they
+/// Which list the window shows, the game picked in each list, and whether couch mode is on. The
+/// sidebar, the menu bar, the keyboard and the controller all change them through here, so they
 /// stay in step with each other.
 @MainActor
 final class Navigator: ObservableObject {
     // New users land on Setup until they have an emulator.
     @Published var selection: SidebarItem? = Emulator.allCases.contains(where: \.isInstalled) ? .system(.nes) : .setup
     @Published private(set) var couchMode = false
+    /// The game last picked in each list, in the browser or couch mode, so going back to a list
+    /// lands on it again.
+    @Published var pickedGames: [SidebarItem: Game.ID] = [:]
 
     /// Couch mode only shows lists with games in them, so the controller never lands on a blank screen.
     func couchItems(_ library: Library) -> [SidebarItem] {
