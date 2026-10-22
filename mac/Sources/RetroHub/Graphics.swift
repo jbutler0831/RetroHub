@@ -151,7 +151,7 @@ enum RetroArchGraphics {
     }
 
     /// A folder setting from retroarch.cfg, or RetroArch's default inside its base folder.
-    private static func directory(_ setting: String?, default name: String) -> URL {
+    static func directory(_ setting: String?, default name: String) -> URL {
         guard var path = setting, !path.isEmpty, path != "default" else { return baseDir.appending(path: name) }
         if path.hasPrefix("~") {
             path = FileManager.default.homeDirectoryForCurrentUser.path + path.dropFirst()
@@ -162,7 +162,7 @@ enum RetroArchGraphics {
     }
 
     /// `key = "value"` lines from a RetroArch config file.
-    private static func readConfig(_ url: URL) -> [String: String] {
+    static func readConfig(_ url: URL) -> [String: String] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
         var values: [String: String] = [:]
         for line in text.split(separator: "\n") {

@@ -2,8 +2,9 @@
 import AppKit
 
 /// Checks for the parts of RetroHub that don't need a window: title cleanup, library scanning,
-/// PARAM.SFO parsing, RetroArch options, status color contrast and emulator processes. The
-/// Command Line Tools don't include XCTest, so a debug build runs these itself:
+/// PARAM.SFO parsing, RetroArch options, status color contrast, emulator processes and the
+/// compatibility inventory. The Command Line Tools don't include XCTest, so a debug build runs
+/// these itself:
 ///
 ///     swift build && "$(swift build --show-bin-path)/RetroHub" --self-test
 ///
@@ -24,7 +25,8 @@ enum SelfTests {
         for (name, section) in [("titles", titles), ("PARAM.SFO", { sfo(in: tmp.appending(path: "sfo")) }),
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
                                 ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
-                                ("cover art", coverArt), ("appearance", appearance), ("game process", gameProcess)] {
+                                ("cover art", coverArt), ("appearance", appearance), ("game process", gameProcess),
+                                ("compatibility", compatibility)] {
             print("- \(name)")
             section()
         }
@@ -206,6 +208,92 @@ enum SelfTests {
         expect(game?.isRunning, false, "and the process has ended")
         expect((try? Launcher.start(URL(filePath: "/nonexistent/emulator"), []) { _ in }) == nil, true,
                "a missing emulator is an error, not a silent failure")
+    }
+
+    private static func compatibility() {
+        let x86 = Data([0xCF, 0xFA, 0xED, 0xFE, 0x07, 0x00, 0x00, 0x01])
+        let arm = Data([0xCF, 0xFA, 0xED, 0xFE, 0x0C, 0x00, 0x00, 0x01])
+        let universal = Data([0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 2, 0x01, 0, 0, 0x07] + Array(repeating: 0, count: 16)
+                             + [0x01, 0, 0, 0x0C] + Array(repeating: 0, count: 16))
+        expect(Compatibility.architectures(header: x86), ["x86_64"], "an Intel program")
+        expect(Compatibility.architectures(header: arm), ["arm64"], "an Apple silicon program")
+        expect(Compatibility.architectures(header: universal), ["x86_64", "arm64"], "a universal program")
+        expect(Compatibility.architectures(header: Data("#!/bin/sh\n".utf8)), [], "a script is no Mach-O")
+        expect(Compatibility.architectures(header: Data([0xCA, 0xFE])), [], "a cut-off header")
+
+        // From libretro-core-info's mednafen_psx_libretro.info.
+        let info = """
+            firmware_count = 3
+            firmware0_desc = "scph5500.bin (PS1 JP BIOS)"
+            firmware0_path = "scph5500.bin"
+            firmware0_opt = "false"
+            firmware1_desc = "scph5501.bin (PS1 US BIOS)"
+            firmware1_path = "scph5501.bin"
+            firmware1_opt = "false"
+            firmware2_desc = "psxonpsp660.bin (PSP PS1 BIOS)"
+            firmware2_path = "psxonpsp660.bin"
+            firmware2_opt = "true"
+            """
+        let firmware = Compatibility.firmware(info: info)
+        expect(firmware.map(\.path), ["scph5500.bin", "scph5501.bin", "psxonpsp660.bin"], "firmware files from a core's .info")
+        expect(firmware.map(\.optional), [false, false, true], "and which are optional")
+        expect(Compatibility.firmware(info: "display_name = \"Nestopia\"").isEmpty, true, "a core without firmware")
+
+        typealias Installed = Compatibility.Installed
+        let retroArch = Compatibility.InstalledEmulator(path: "/Applications/RetroArch.app", version: "1.22.2", architectures: ["x86_64", "arm64"])
+        func core(_ architectures: [String], _ firmware: [Compatibility.Firmware]? = []) -> Compatibility.InstalledCore {
+            Compatibility.InstalledCore(architectures: architectures, firmware: firmware)
+        }
+        func status(_ system: GameSystem, _ installed: Installed) -> Compatibility.Status {
+            Compatibility.evaluate(system, installed).status
+        }
+        var mac = Installed(architecture: "x86_64")
+        mac.retroArch.configFound = true
+        expect(status(.nes, mac), .setupRequired, "nothing installed")
+        mac.emulators["retroArch"] = retroArch
+        expect(status(.nes, mac), .setupRequired, "RetroArch without an NES core")
+        expect(Compatibility.evaluate(.nes, mac).evidence.joined().contains("mesen_libretro.dylib"), true, "names the cores it looked for")
+        mac.cores["fceumm"] = core(["x86_64"])
+        let nes = Compatibility.evaluate(.nes, mac)
+        expect(nes.status, .ready, "RetroArch and an Intel NES core on an Intel Mac")
+        expect(nes.backend, "RetroArch (FCEUmm)", "using the first core RetroHub would pick")
+        expect(nes.confidence, .high, "from files on disk")
+        mac.cores["mesen"] = core(["arm64"])
+        expect(status(.nes, mac), .unsupported, "an Apple silicon core, which RetroHub would pick first, on an Intel Mac")
+        mac.retroArch.configFound = false
+        mac.cores["mesen"] = core(["x86_64", "arm64"])
+        expect(Compatibility.evaluate(.nes, mac).confidence, .medium, "less sure with RetroArch's default folders assumed")
+
+        let bios = firmware.map { item -> Compatibility.Firmware in var item = item; item.present = false; return item }
+        mac.cores["swanstation"] = core(["x86_64"], bios)
+        expect(status(.ps1, mac), .setupRequired, "PlayStation without the BIOS the core needs")
+        mac.cores["swanstation"] = core(["x86_64"], bios.enumerated().map { var item = $1; item.present = $0 == 1; return item })
+        expect(status(.ps1, mac), .unknown, "with one region's BIOS of two")
+        mac.cores["swanstation"] = core(["x86_64"], bios.map { var item = $0; item.present = !item.optional; return item })
+        expect(status(.ps1, mac), .ready, "with every required BIOS")
+        mac.retroArch.systemNotRead = true
+        mac.cores["swanstation"] = core(["x86_64"], firmware)
+        expect(status(.ps1, mac), .unknown, "firmware folder in Documents, not read")
+        mac.cores["swanstation"] = core(["x86_64"], nil)
+        expect(status(.ps1, mac), .unknown, "no .info file, and the system needs a BIOS")
+
+        mac.emulators["dolphin"] = Compatibility.InstalledEmulator(path: "/Applications/Dolphin.app", version: "2509", architectures: ["x86_64", "arm64"])
+        expect(status(.gamecube, mac), .ready, "a standalone emulator for a system that needs no firmware")
+        mac.emulators["pcsx2"] = Compatibility.InstalledEmulator(path: "/Applications/PCSX2.app", version: nil, architectures: ["x86_64"])
+        expect(status(.ps2, mac), .unknown, "PCSX2 keeps the BIOS it needs itself")
+        var appleSilicon = Installed(architecture: "arm64")
+        appleSilicon.emulators["pcsx2"] = mac.emulators["pcsx2"]
+        appleSilicon.emulators["dolphin"] = Compatibility.InstalledEmulator(path: "/Applications/Dolphin.app", version: nil, architectures: ["x86_64"])
+        expect(status(.gamecube, appleSilicon), .unsupported, "an Intel-only emulator on Apple silicon without Rosetta")
+        appleSilicon.rosetta = true
+        expect(status(.gamecube, appleSilicon), .ready, "and with Rosetta")
+
+        // On this Mac, RetroHub's launcher and the inventory pick the same way.
+        let here = Installed.current()
+        for system in GameSystem.allCases {
+            expect(Compatibility.evaluate(system, here).backend != nil, Launcher.readiness(for: system).ready,
+                   "\(system.displayName): the inventory and the launcher agree")
+        }
     }
 
     private static func appearance() {

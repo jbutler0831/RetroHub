@@ -22,8 +22,14 @@ enum Main {
     @MainActor
     static func main() {
         #if DEBUG
-        // Debug builds can run the checks in SelfTests.swift instead of the app.
+        // Debug builds can run the checks in SelfTests.swift, or the inventory, instead of the app.
         if ProcessInfo.processInfo.arguments.contains("--self-test") { exit(SelfTests.run()) }
+        // A read-only report of what can play here (Compatibility.swift).
+        if ProcessInfo.processInfo.arguments.contains("--inventory") {
+            let report = Compatibility.Report.current(includeProtected: ProcessInfo.processInfo.arguments.contains("--include-documents"))
+            print(ProcessInfo.processInfo.arguments.contains("--json") ? report.json : report.text)
+            exit(0)
+        }
         #endif
         RetroHubApp.main()
     }
