@@ -25,7 +25,18 @@ final class ControllerInput: ObservableObject {
             }
         }
         refresh()
+        #if DEBUG
+        NotificationCenter.default.addObserver(forName: Self.simulatedCommand, object: nil, queue: .main) { [weak self] note in
+            guard let command = note.object as? ControllerCommand else { return }
+            MainActor.assumeIsolated { self?.commands.send(command) }
+        }
+        #endif
     }
+
+    #if DEBUG
+    /// UIChecks.swift posts commands under this name, as if they came from a controller.
+    static let simulatedCommand = Notification.Name("RetroHubSimulatedControllerCommand")
+    #endif
 
     private func refresh() {
         let controllers = GCController.controllers()

@@ -22,7 +22,7 @@ enum SelfTests {
 
         for (name, section) in [("titles", titles), ("PARAM.SFO", { sfo(in: tmp.appending(path: "sfo")) }),
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
-                                ("systems", systems), ("RetroArch options", retroArchOptions),
+                                ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
                                 ("cover art", coverArt)] {
             print("- \(name)")
             section()
@@ -139,6 +139,30 @@ enum SelfTests {
             expect(system.fileExtensions.isEmpty, [.ps3, .ps4, .vita].contains(system), "\(system) extensions")
         }
         expect(SidebarItem.all.count, GameSystem.allCases.count + 2, "controller cycles favorites, recent and every system")
+    }
+
+    private static func sidebar() {
+        let listed = SidebarItem.sections.flatMap(\.items)
+        expect(Set(listed).count, listed.count, "each sidebar row appears once")
+        expect(SidebarItem.sections.first?.items, [.favorites, .recent, .setup], "Favorites, Recently Played and Setup come first")
+        expect(SidebarItem.sections.dropFirst().map(\.title), GameSystem.makers.map(Optional.some), "a section per maker, in order")
+        for (title, items) in SidebarItem.sections.dropFirst() {
+            let own = items.allSatisfy { if case .system(let system) = $0 { system.maker == title } else { false } }
+            expect(own, true, "\(title ?? "") lists only its own systems")
+        }
+        expect(listed.filter { if case .system = $0 { true } else { false } }.count, GameSystem.allCases.count,
+               "every system has a row")
+        expect(Set(listed.map(\.title)).count, listed.count, "every row has its own name")
+        expect(listed.allSatisfy { !$0.title.isEmpty && !$0.symbol.isEmpty }, true, "every row has a name and an icon")
+        expect(SidebarItem.all, listed.filter { $0 != .setup }, "LB/RB go through the lists in sidebar order, skipping Setup")
+
+        let items: [SidebarItem] = [.favorites, .recent, .system(.nes)]
+        expect(SidebarItem.stepping(from: .favorites, by: 1, in: items), .recent, "next")
+        expect(SidebarItem.stepping(from: .system(.nes), by: 1, in: items), .favorites, "next wraps to the first")
+        expect(SidebarItem.stepping(from: .favorites, by: -1, in: items), .system(.nes), "previous wraps to the last")
+        expect(SidebarItem.stepping(from: .setup, by: 1, in: items), .favorites, "from Setup, next is the first list")
+        expect(SidebarItem.stepping(from: .setup, by: -1, in: items), .system(.nes), "from Setup, previous is the last list")
+        expect(SidebarItem.stepping(from: .favorites, by: 1, in: []), nil, "no lists to step through")
     }
 
     private static func retroArchOptions() {

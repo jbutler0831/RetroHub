@@ -34,8 +34,20 @@ enum SidebarItem: Hashable {
     case favorites, recent, setup
     case system(GameSystem)
 
-    /// The game lists, in the order the controller cycles through them.
-    static let all: [SidebarItem] = [.favorites, .recent] + GameSystem.allCases.map(SidebarItem.system)
+    /// The sidebar, top to bottom: the lists and Setup, then each maker's systems under its name.
+    static let sections: [(title: String?, items: [SidebarItem])] = [(nil, [.favorites, .recent, .setup])]
+        + GameSystem.makers.map { maker in (maker, GameSystem.allCases.filter { $0.maker == maker }.map(SidebarItem.system)) }
+
+    /// The game lists in sidebar order: what LB/RB and Next/Previous System step through.
+    static let all: [SidebarItem] = sections.flatMap(\.items).filter { $0 != .setup }
+
+    /// The item `step` places away in `items`, wrapping around at either end. From an item that
+    /// isn't in `items`, such as Setup, a step forward lands on the first item and back on the last.
+    static func stepping(from item: SidebarItem, by step: Int, in items: [SidebarItem]) -> SidebarItem? {
+        guard !items.isEmpty else { return nil }
+        let current = items.firstIndex(of: item) ?? (step > 0 ? -1 : 0)
+        return items[((current + step) % items.count + items.count) % items.count]
+    }
 
     var title: String {
         switch self {

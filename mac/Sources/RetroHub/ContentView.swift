@@ -1,26 +1,29 @@
 import SwiftUI
 
+/// The two places in the browser that take keyboard focus.
+enum FocusArea: Hashable {
+    case sidebar, games
+}
+
 struct ContentView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var controller: ControllerInput
-    // New users land on Setup until they have an emulator.
-    @State private var selection: SidebarItem? = Emulator.allCases.contains(where: \.isInstalled) ? .system(.nes) : .setup
+    @EnvironmentObject private var navigator: Navigator
     @State private var search = ""
-    @State private var couchMode = false
+    /// The game last picked in each list, so going back to a list lands on it again.
+    @State private var pickedGames: [SidebarItem: Game.ID] = [:]
+    @FocusState private var focus: FocusArea?
 
     /// Space under the sidebar list for the controller status.
     private static let controllerStatusHeight: CGFloat = 56
 
-    /// Couch mode only shows lists with games in them, so the controller never lands on a blank screen.
-    private var couchItems: [SidebarItem] {
-        SidebarItem.all.filter { !library.games(for: $0).isEmpty }
-    }
-
     var body: some View {
         Group {
-            if couchMode {
-                CouchView(item: selection ?? .system(.nes), items: couchItems,
-                          onSelect: { selection = $0 }, onCycle: cycle, onExit: { setCouchMode(false) })
+            if navigator.couchMode {
+                CouchView(item: navigator.selection ?? .system(.nes), items: navigator.couchItems(library),
+                          pickedGames: $pickedGames, onSelect: { navigator.selection = $0 },
+                          onCycle: { navigator.cycle($0, library: library) },
+                          onExit: { navigator.setCouchMode(false, library: library) })
             } else {
                 browser
             }
@@ -31,9 +34,9 @@ struct ContentView: View {
         }
         .onReceive(controller.commands) { command in
             switch command {
-            case .previousSystem: cycle(-1)
-            case .nextSystem: cycle(1)
-            case .toggleCouchMode: setCouchMode(!couchMode)
+            case .previousSystem: navigator.cycle(-1, library: library)
+            case .nextSystem: navigator.cycle(1, library: library)
+            case .toggleCouchMode: navigator.setCouchMode(!navigator.couchMode, library: library)
             default: break
             }
         }
@@ -49,47 +52,57 @@ struct ContentView: View {
 
     private var browser: some View {
         NavigationSplitView {
-            List(selection: $selection) {
-                Section {
-                    ForEach([SidebarItem.favorites, .recent], id: \.self) { item in
-                        SidebarRow(item: item, count: library.games(for: item).count).tag(item)
-                    }
-                    SidebarRow(item: .setup, count: nil).tag(SidebarItem.setup)
-                }
-                ForEach(GameSystem.makers, id: \.self) { maker in
-                    Section(maker) {
-                        ForEach(GameSystem.allCases.filter { $0.maker == maker }) { system in
-                            let item = SidebarItem.system(system)
-                            SidebarRow(item: item, count: library.games(for: item).count).tag(item)
+            ScrollViewReader { proxy in
+                List(selection: $navigator.selection) {
+                    ForEach(SidebarItem.sections, id: \.title) { section in
+                        if let title = section.title {
+                            Section(title) { rows(section.items) }
+                        } else {
+                            Section { rows(section.items) }
                         }
                     }
                 }
+                .focused($focus, equals: .sidebar)
+                // Return or → opens the selected list's games; ↑ and ↓ keep moving through the sidebar.
+                .onKeyPress(keys: [.return, .rightArrow]) { _ in
+                    guard navigator.selection != .setup, navigator.selection != nil else { return .ignored }
+                    focus = .games
+                    return .handled
+                }
+                // The menu bar and the controller's LB and RB can select a row that's out of view.
+                .onChange(of: navigator.selection) { _, item in
+                    if let item { proxy.scrollTo(item) }
+                }
+                // Nothing that lays out views may wrap the List (ScrollViewReader doesn't), so the
+                // controller status floats over room left below it: on macOS 14, a List inside
+                // .safeAreaInset or a VStack keeps a 38pt column, which cuts every row off after its icon.
+                .padding(.bottom, Self.controllerStatusHeight)
+                .overlay(alignment: .bottom) {
+                    ControllerStatus(name: controller.controllerName)
+                        .padding(10)
+                        .frame(height: Self.controllerStatusHeight)
+                }
             }
-            // The List must stay the sidebar's root view, so the controller status floats over
-            // room left below it: on macOS 14, a List inside .safeAreaInset or a VStack keeps a
-            // 38pt column, which cuts every row off after its icon.
-            .padding(.bottom, Self.controllerStatusHeight)
-            .overlay(alignment: .bottom) {
-                ControllerStatus(name: controller.controllerName)
-                    .padding(10)
-                    .frame(height: Self.controllerStatusHeight)
-            }
+            // On the column's outermost view: inside the ScrollViewReader it was ignored, and the
+            // sidebar opened 140pt wide.
             .navigationSplitViewColumnWidth(min: 220, ideal: 240)
         } detail: {
-            switch selection {
+            switch navigator.selection {
             case .setup:
                 SetupView()
             case let item?:
-                GameGridView(item: item, search: search)
+                GameGridView(item: item, search: search, pickedGame: pickedGame(for: item), focus: $focus)
                     .id(item)
             case nil:
                 ContentUnavailableView("Pick a system", systemImage: "gamecontroller")
             }
         }
         .searchable(text: $search, prompt: "Search games")
+        // Return in the search field moves to the results, so a second Return plays the first one.
+        .onSubmit(of: .search) { focus = .games }
         .toolbar {
             ToolbarItemGroup {
-                Button("Couch Mode", systemImage: "tv") { setCouchMode(true) }
+                Button("Couch Mode", systemImage: "tv") { navigator.setCouchMode(true, library: library) }
                     .help("Full-screen view for playing with a controller")
                 Button("Rescan", systemImage: "arrow.clockwise") { library.rescan() }
                     .help("Look for new games")
@@ -97,45 +110,104 @@ struct ContentView: View {
         }
     }
 
-    private func cycle(_ step: Int) {
-        let items = couchMode ? couchItems : SidebarItem.all
-        guard !items.isEmpty else { return }
-        let current = items.firstIndex(of: selection ?? .system(.nes)) ?? (step > 0 ? -1 : 0)
-        selection = items[(current + step + items.count) % items.count]
+    private func rows(_ items: [SidebarItem]) -> some View {
+        ForEach(items, id: \.self) { item in
+            SidebarRow(item: item, count: item == .setup ? nil : library.games(for: item).count)
+                .tag(item)
+        }
     }
 
-    private func setCouchMode(_ on: Bool) {
-        couchMode = on
-        if on, let first = couchItems.first, !couchItems.contains(selection ?? .setup) {
-            selection = first
-        }
-        if let window = NSApp.keyWindow ?? NSApp.windows.first,
-           window.styleMask.contains(.fullScreen) != on {
-            window.toggleFullScreen(nil)
-        }
+    private func pickedGame(for item: SidebarItem) -> Binding<Game.ID?> {
+        Binding(get: { pickedGames[item] }, set: { pickedGames[item] = $0 })
     }
 }
 
 private struct SidebarRow: View {
     let item: SidebarItem
+    /// Games in the list; nil for Setup.
     let count: Int?
+    @Environment(\.sidebarRowSize) private var rowSize
+
+    /// For a system with games, whether anything installed can play them.
+    private var readiness: Launcher.Readiness? {
+        guard case .system(let system) = item, let count, count > 0 else { return nil }
+        return Launcher.readiness(for: system)
+    }
+
+    /// Follows System Settings › Appearance › Sidebar icon size.
+    private var iconSize: CGFloat {
+        switch rowSize {
+        case .small: 18
+        case .large: 26
+        default: 22
+        }
+    }
 
     var body: some View {
+        let readiness = readiness
         HStack(spacing: 10) {
-            IconTile(symbol: item.symbol, color: item.color)
+            IconTile(symbol: item.symbol, color: item.color, size: iconSize)
+                .accessibilityHidden(true)
             Text(item.title)
-            Spacer()
+                .lineLimit(1)
+            Spacer(minLength: 4)
             if let count, count > 0 {
-                Text("\(count)")
-                    .font(.caption.weight(.medium))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 1)
-                    .background(.quaternary, in: Capsule())
+                CountBadge(count: count, setupNeeded: readiness?.ready == false)
             }
         }
         .padding(.vertical, 2)
+        .help(help(readiness))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(item.title)
+        .accessibilityValue(accessibilityValue(readiness))
+    }
+
+    private var gamesText: String {
+        count == 1 ? "1 game" : "\(count ?? 0) games"
+    }
+
+    private func help(_ readiness: Launcher.Readiness?) -> String {
+        switch item {
+        case .setup: return "Emulators, games folder, graphics, controller and BIOS files"
+        case .favorites, .recent: return "\(item.title): \(gamesText)"
+        case .system(let system):
+            guard let readiness else { return "\(system.displayName): no games yet" }
+            return "\(system.displayName): \(gamesText). "
+                + (readiness.ready ? readiness.summary : "Setup needed. " + (readiness.detail ?? ""))
+        }
+    }
+
+    private func accessibilityValue(_ readiness: Launcher.Readiness?) -> String {
+        guard count != nil else { return "" }
+        return readiness?.ready == false ? "\(gamesText), setup needed" : gamesText
+    }
+}
+
+/// The number of games in a sidebar row; orange with a warning sign when no emulator can play them.
+private struct CountBadge: View {
+    let count: Int
+    let setupNeeded: Bool
+    /// Increased in a selected row with the accent-colored highlight.
+    @Environment(\.backgroundProminence) private var prominence
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if setupNeeded {
+                Image(systemName: "exclamationmark.triangle.fill")
+            }
+            Text("\(count)")
+                .monospacedDigit()
+        }
+        .font(.caption.weight(.medium))
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 1)
+        .background(setupNeeded ? AnyShapeStyle(.orange.opacity(0.18)) : AnyShapeStyle(.quaternary), in: Capsule())
+    }
+
+    private var foreground: AnyShapeStyle {
+        if prominence == .increased { return AnyShapeStyle(.white) }
+        return setupNeeded ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary)
     }
 }
 
@@ -165,9 +237,17 @@ private struct GameGridView: View {
     @EnvironmentObject private var controller: ControllerInput
     let item: SidebarItem
     let search: String
-    @State private var selectedID: Game.ID?
+    /// The selected game, kept by ContentView for each list.
+    @Binding var pickedGame: Game.ID?
+    var focus: FocusState<FocusArea?>.Binding
     @State private var columnCount = 1
-    @FocusState private var gridFocused: Bool
+
+    private var selectedID: Game.ID? {
+        get { pickedGame }
+        nonmutating set { pickedGame = newValue }
+    }
+
+    private var gridFocused: Bool { focus.wrappedValue == .games }
 
     private static let cardWidth: CGFloat = 160
     private static let spacing: CGFloat = 24
@@ -187,7 +267,7 @@ private struct GameGridView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GridHeader(item: item, count: library.games(for: item).count)
+            GridHeader(item: item, count: library.games(for: item).count, shown: search.isEmpty ? nil : games.count)
             if games.isEmpty {
                 emptyState
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -212,12 +292,15 @@ private struct GameGridView: View {
                                              count: columnCount),
                               spacing: Self.spacing) {
                         ForEach(games) { game in
-                            GameCard(game: game, isSelected: game.id == selectedID,
+                            GameCard(game: game, isSelected: game.id == selectedID, isFocused: gridFocused,
                                      isFavorite: library.isFavorite(game), showsSystem: !isSystemList,
                                      onPlay: { play(game) })
                                 .id(game.id)
                                 .onTapGesture(count: 2) { play(game) }
-                                .onTapGesture { selectedID = game.id }
+                                .onTapGesture {
+                                    selectedID = game.id
+                                    focus.wrappedValue = .games
+                                }
                                 .contextMenu {
                                     Button("Play", systemImage: "play.fill") { play(game) }
                                     Button(library.isFavorite(game) ? "Remove from Favorites" : "Add to Favorites",
@@ -243,10 +326,13 @@ private struct GameGridView: View {
         }
         .focusable()
         .focusEffectDisabled()
-        .focused($gridFocused)
+        .focused(focus, equals: .games)
         .onAppear {
-            gridFocused = true
-            if selectedID == nil { selectedID = games.first?.id }
+            // When a list is picked in the sidebar, focus stays there so ↑ and ↓ keep moving
+            // through the lists; otherwise the games take it. Asked of AppKit: the List doesn't
+            // update `focus` when a click or the keyboard puts it in charge.
+            if !(NSApp.keyWindow?.firstResponder is NSOutlineView) { focus.wrappedValue = .games }
+            if selectedGame == nil { selectedID = games.first?.id }
         }
         .onKeyPress(.upArrow) { handle(.move(dx: 0, dy: -1)); return .handled }
         .onKeyPress(.downArrow) { handle(.move(dx: 0, dy: 1)); return .handled }
@@ -254,9 +340,13 @@ private struct GameGridView: View {
         .onKeyPress(.rightArrow) { handle(.move(dx: 1, dy: 0)); return .handled }
         .onKeyPress(.return) { handle(.play); return .handled }
         .onKeyPress("f") { handle(.favorite); return .handled }
+        .onKeyPress(.escape) { focus.wrappedValue = .sidebar; return .handled }
     }
 
     private func handle(_ command: ControllerCommand) {
+        // Controller input works wherever keyboard focus is; moving focus to the games shows
+        // the selected game as active.
+        if command != .back { focus.wrappedValue = .games }
         switch command {
         case .move(let dx, let dy):
             guard !games.isEmpty else { return }
@@ -311,6 +401,8 @@ private struct GameGridView: View {
 private struct GridHeader: View {
     let item: SidebarItem
     let count: Int
+    /// How many games match the search, while searching.
+    let shown: Int?
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
@@ -319,7 +411,7 @@ private struct GridHeader: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(item.title).font(.largeTitle.weight(.bold))
                 HStack(spacing: 10) {
-                    Text(count == 1 ? "1 game" : "\(count) games")
+                    Text(shown.map { "\($0) of \(count) games" } ?? (count == 1 ? "1 game" : "\(count) games"))
                         .foregroundStyle(.secondary)
                     if case .system(let system) = item {
                         SystemStatus(system: system)
@@ -446,6 +538,9 @@ private struct StepRow<Action: View>: View {
 private struct GameCard: View {
     let game: Game
     let isSelected: Bool
+    /// Whether the games have keyboard focus: the selected game is outlined in the accent color
+    /// then, and in gray while focus is in the sidebar or the search field.
+    let isFocused: Bool
     let isFavorite: Bool
     let showsSystem: Bool
     let onPlay: () -> Void
@@ -483,7 +578,7 @@ private struct GameCard: View {
                 }
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 3)
+                        .strokeBorder(isSelected ? (isFocused ? Color.accentColor : Color.secondary) : .clear, lineWidth: 3)
                 }
                 .shadow(color: .black.opacity(isRaised ? 0.3 : 0.12), radius: isRaised ? 12 : 4, y: isRaised ? 6 : 2)
                 .scaleEffect(isSelected ? 1.04 : isHovering ? 1.02 : 1)

@@ -1,27 +1,62 @@
 #!/bin/bash
-# Runs the window checks in UIChecks.swift: builds RetroHub Dev, opens it on the test library for a
-# few seconds and saves a picture of the window after each step to build/dev/ui-check. Exits
+# Runs the window checks in UIChecks.swift in "RetroHub Dev Check", a debug build with its own
+# bundle ID. Its settings are wiped before each run, so every run starts like a first launch, and
+# RetroHub Dev's settings, favorites and window are never touched. The window comes to the front
+# for about a minute and goes full screen once (couch mode); clicking elsewhere meanwhile makes
+# the keyboard and menu checks fail. Pictures of each step go to build/dev/ui-check. Exits
 # non-zero if a check fails.
 #
 #   RETROHUB_DEV_LIBRARY   games folder to use (default: .devdata/Games, as in dev-run.sh)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="build/dev/RetroHub Dev.app"
+NAME="RetroHub Dev Check"
+BUNDLE_ID=io.github.jbutler0831.retrohub.devcheck
+APP="build/dev/$NAME.app"
 LIBRARY="${RETROHUB_DEV_LIBRARY:-$(cd .. && pwd)/.devdata/Games}"
 OUT=build/dev/ui-check
 
 if pgrep -f "$APP/Contents/MacOS/RetroHub" >/dev/null; then
-    echo "Quit RetroHub Dev first: the checks open their own window" >&2
+    echo "Quit $NAME first" >&2
     exit 1
 fi
 # The checks only exist in debug builds.
-CONFIG=debug scripts/dev-build.sh
+CONFIG=debug NAME="$NAME" BUNDLE_ID="$BUNDLE_ID" scripts/dev-build.sh
 [ -d "$LIBRARY" ] || swift scripts/make-test-library.swift "$LIBRARY"
-
 rm -rf "$OUT"
+
 status=0
-# -libraryRoot on the command line applies to this run only; it isn't saved.
-"$APP/Contents/MacOS/RetroHub" -libraryRoot "$LIBRARY" --ui-check "$PWD/$OUT" || status=$?
+# Starts from fresh settings; -libraryRoot and the other arguments apply to this run only. Opened
+# with `open` so macOS brings the window to the front: keyboard focus and menu commands only behave
+# normally in the active window. Output goes to <name>.log, then to the terminal.
+run() {
+    local name=$1; shift
+    local log="$PWD/$OUT/$name.log"
+    mkdir -p "$OUT"
+    : > "$log"
+    defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
+    rm -rf ~/Library/"Saved Application State/$BUNDLE_ID.savedState"
+    open -W -n --stdout "$log" --stderr "$log" "$APP" --args -libraryRoot "$LIBRARY" "$@" &
+    local opener=$!
+    local waited=0
+    while kill -0 "$opener" 2>/dev/null; do
+        sleep 1
+        waited=$((waited + 1))
+        if [ "$waited" -ge 180 ]; then
+            pkill -f "$APP/Contents/MacOS/RetroHub" || true
+            echo "FAIL: timed out" >> "$log"
+        fi
+    done
+    cat "$log"
+    grep -q "^PASS:" "$log" || status=1
+}
+
+run checks --ui-check "$PWD/$OUT"
+# The sidebar at the other icon sizes in System Settings › Appearance.
+echo "Sidebar icon size Small:"
+run small -NSTableViewDefaultSizeMode 1 --ui-check "$PWD/$OUT/small" --rows-only
+echo "Sidebar icon size Large:"
+run large -NSTableViewDefaultSizeMode 3 --ui-check "$PWD/$OUT/large" --rows-only
+
 echo "Pictures of each step: mac/$OUT"
 exit $status

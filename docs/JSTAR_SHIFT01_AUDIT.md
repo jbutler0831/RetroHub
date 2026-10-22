@@ -90,8 +90,8 @@ swift build
 # Isolated development app: build/dev/RetroHub Dev.app, bundle ID io.github.jbutler0831.retrohub.dev
 scripts/dev-build.sh                  # never installs anything
 scripts/dev-run.sh                    # opens it with the test library; log in build/dev/logs/
-scripts/dev-ui-check.sh               # opens it for ~6 s, checks the sidebar → PASS: 5 checks;
-                                      # pictures of each step in build/dev/ui-check/
+scripts/dev-ui-check.sh               # window checks in a separate "RetroHub Dev Check" app;
+                                      # see docs/JSTAR_SHIFT02_UI_UX.md (47 checks since Shift 02)
 
 # Release / universal build WITHOUT touching ~/Applications
 cd .. && INSTALL=0 mac/build.sh       # → mac/build/RetroHub.app + RetroHub.zip
@@ -152,12 +152,12 @@ What `--self-test` covers:
 
 | # | Severity | Finding | Where | Proposed fix |
 |---|---|---|---|---|
-| O1 | **High** | **A controller press can launch a game more than once.** `WindowGroup` allows File › New Window (⌘N). Each window's grid subscribes to `controller.commands`, so one A press calls `play` once per open window. | `RetroHubApp.swift:30`, `ContentView.swift:196` | Use a single `Window` scene. Confirm in manual test 7 first |
+| O1 | **High** | **A controller press can launch a game more than once.** `WindowGroup` allows File › New Window (⌘N). Each window's grid subscribes to `controller.commands`, so one A press calls `play` once per open window. | `RetroHubApp.swift:30`, `ContentView.swift:196` | **Fixed in Shift 02** (single `Window` scene). With two windows, one simulated Y toggled a favorite on and straight back off; see `docs/JSTAR_SHIFT02_UI_UX.md` |
 | O2 | **High** | **Nothing stops a second launch while a game is starting or running.** `Process` doesn't bring the emulator to the front. If it opens behind RetroHub, or in another Space because couch mode is full screen, the controller still drives RetroHub, and another A starts a second emulator. | `Systems.swift:384-389` | Track the running game; use `NSWorkspace.openApplication` with `arguments`/`activates` (or activate the child's `NSRunningApplication`); ignore Play while a game runs. Confirm in manual tests 6 and 8 |
 | O3 | Medium | **No subprocess lifecycle.** No termination handler or exit status. Emulators that quit immediately (missing BIOS or core) fail silently, yet the game is still added to Recently Played. | `Systems.swift:384`, `Library.swift:157` | `Process.terminationHandler` + a `runningGame` state. This is also the hook for music pause/resume (§6) |
 | O4 | Medium | **Full rescan on the main thread at launch and on every app activation**, i.e. every return from a game. Recursive enumeration, so big or network libraries will stall the UI. | `ContentView.swift:25-27`, `Library.swift:119` | Scan off the main actor; publish the results |
 | O5 | Medium | **Couch-mode carousel isn't lazy.** Every cover in the list loads at once; unmatched titles try up to 11 URLs each against libretro's server. | `CouchView.swift:107` | `LazyHStack` |
-| O6 | Low | AppKit warns "reentrant operation in its NSTableView delegate. This warning will become an assert in the future" on every launch | `build/dev/logs/*.log` (sidebar `List`) | Narrowed during F5: it goes away when the sidebar has no `Section`s, and stays with or without the activation rescan, whatever is selected, and with the F5 fix. Not related to the missing labels. Look at the header-less first `Section` |
+| O6 | Low | AppKit warns "reentrant operation in its NSTableView delegate. This warning will become an assert in the future" on every launch | `build/dev/logs/*.log` (sidebar `List`) | Narrowed during F5: it goes away when the sidebar has no `Section`s, and stays with or without the activation rescan, whatever is selected, and with the F5 fix. Not related to the missing labels. Look at the header-less first `Section`. (Shift 02: a separate "-layoutSubtreeIfNeeded … already being laid out" message appears once when the split view's divider is moved by code; it does on the Phase 1 code too) |
 | O7 | Low | Controller UX: no auto-repeat on held directions; B in the grid only dismisses errors; only the first controller's name is shown; Home and Options are unused | `ControllerInput.swift` | Part of the Phase 4 design |
 | O8 | Low | Favorites and recents are keyed by absolute path, so changing the games folder or moving files loses them | `Library.swift:12` | Key on a path relative to the root (with migration) |
 | O9 | Low | No `.m3u` multi-disc support, so each disc is listed separately (PS1, Sega CD, Saturn) | `Systems.swift` extensions | Add `m3u`; hide the discs it lists |
