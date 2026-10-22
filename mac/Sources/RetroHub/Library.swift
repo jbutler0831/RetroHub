@@ -161,7 +161,7 @@ final class Library: ObservableObject {
         }
     }
 
-    private static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
+    static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
         let games = switch system {
         case .ps3: scanPS3(folder)
         case .ps4: scanPS4(folder)
@@ -236,9 +236,10 @@ final class Library: ObservableObject {
         let keyTable = u32(8), dataTable = u32(12), count = u32(16)
         for index in 0..<count {
             let entry = 20 + index * 16
+            // Checked before reading the entry: a damaged file can claim more entries than it holds.
+            guard entry + 16 <= data.count else { return nil }
             let keyStart = keyTable + u16(entry)
-            guard entry + 16 <= data.count, keyStart < data.count,
-                  let keyEnd = data[keyStart...].firstIndex(of: 0) else { return nil }
+            guard keyStart < data.count, let keyEnd = data[keyStart...].firstIndex(of: 0) else { return nil }
             guard String(decoding: data[keyStart..<keyEnd], as: UTF8.self) == "TITLE" else { continue }
 
             let start = dataTable + u32(entry + 12), length = u32(entry + 4)

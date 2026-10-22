@@ -10,6 +10,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
+enum Main {
+    @MainActor
+    static func main() {
+        #if DEBUG
+        // Debug builds can run the checks in SelfTests.swift instead of the app.
+        if CommandLine.arguments.contains("--self-test") { exit(SelfTests.run()) }
+        #endif
+        RetroHubApp.main()
+    }
+}
+
 struct RetroHubApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var library = Library()

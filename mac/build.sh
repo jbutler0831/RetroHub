@@ -8,6 +8,8 @@
 #   NOTARY_PROFILE  a notarytool keychain profile, created once with
 #                   xcrun notarytool store-credentials <profile> --apple-id <you> --team-id <TEAMID>
 #                   When set (with SIGN_IDENTITY), the app is notarized and the ticket stapled.
+#   INSTALL         0 to leave ~/Applications alone and only build. Development copies:
+#                   scripts/dev-build.sh and scripts/dev-run.sh instead.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -49,6 +51,10 @@ if [ -n "$NOTARY_PROFILE" ]; then
     spctl --assess --type execute -vv "$APP"
 fi
 
+if [ "${INSTALL:-1}" = 0 ]; then
+    echo "Built $APP (release zip: $ZIP); not installed"
+    exit 0
+fi
 mkdir -p ~/Applications
 rm -rf ~/Applications/RetroHub.app
 cp -R "$APP" ~/Applications/

@@ -2,3 +2,6 @@
 /mac/build/
 /mac/.swiftpm/
 .DS_Store
+
+# J-Star dev build test data (mac/scripts/dev-run.sh)
+/.devdata/
