@@ -4,6 +4,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        #if DEBUG
+        UIChecks.startIfRequested()
+        #endif
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -15,7 +18,7 @@ enum Main {
     static func main() {
         #if DEBUG
         // Debug builds can run the checks in SelfTests.swift instead of the app.
-        if CommandLine.arguments.contains("--self-test") { exit(SelfTests.run()) }
+        if ProcessInfo.processInfo.arguments.contains("--self-test") { exit(SelfTests.run()) }
         #endif
         RetroHubApp.main()
     }

@@ -8,6 +8,9 @@ struct ContentView: View {
     @State private var search = ""
     @State private var couchMode = false
 
+    /// Space under the sidebar list for the controller status.
+    private static let controllerStatusHeight: CGFloat = 56
+
     /// Couch mode only shows lists with games in them, so the controller never lands on a blank screen.
     private var couchItems: [SidebarItem] {
         SidebarItem.all.filter { !library.games(for: $0).isEmpty }
@@ -62,9 +65,14 @@ struct ContentView: View {
                     }
                 }
             }
-            .safeAreaInset(edge: .bottom) {
+            // The List must stay the sidebar's root view, so the controller status floats over
+            // room left below it: on macOS 14, a List inside .safeAreaInset or a VStack keeps a
+            // 38pt column, which cuts every row off after its icon.
+            .padding(.bottom, Self.controllerStatusHeight)
+            .overlay(alignment: .bottom) {
                 ControllerStatus(name: controller.controllerName)
                     .padding(10)
+                    .frame(height: Self.controllerStatusHeight)
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 240)
         } detail: {

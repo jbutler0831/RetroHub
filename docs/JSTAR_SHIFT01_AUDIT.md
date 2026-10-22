@@ -8,7 +8,7 @@ Repository: an independent local copy, unpacked from a downloaded ZIP of `main`
 | Build (debug, x86_64) | **PASS** | `swift build`: 0 compiler warnings, also 0 under `-strict-concurrency=complete` |
 | Build (release, universal) | **PASS** | `INSTALL=0 mac/build.sh` → `x86_64 arm64` fat binary, ad-hoc + hardened runtime, `codesign --verify --strict` OK |
 | Automated tests | **PASS** (new) | No tests existed. Added `RetroHub --self-test` (debug only): 91 checks pass |
-| Application launch | **PASS (process level)** | Dev app starts, main window 900×532 on screen, no crash. Rendered UI not seen by me (no Screen Recording permission, which I didn't add) |
+| Application launch | **PASS** | Dev app starts, main window 900×532 on screen, no crash. Since the UI fix shift, `scripts/dev-ui-check.sh` checks the sidebar and saves pictures the app draws of its own window (no Screen Recording permission needed) |
 | Game launch | **UNVERIFIED** | No emulators installed on this Mac |
 | Controller | **UNVERIFIED** | Needs a physical controller and you |
 | Ready for manual test | **YES** | `mac/scripts/dev-run.sh` |
@@ -90,6 +90,8 @@ swift build
 # Isolated development app: build/dev/RetroHub Dev.app, bundle ID io.github.jbutler0831.retrohub.dev
 scripts/dev-build.sh                  # never installs anything
 scripts/dev-run.sh                    # opens it with the test library; log in build/dev/logs/
+scripts/dev-ui-check.sh               # opens it for ~6 s, checks the sidebar → PASS: 5 checks;
+                                      # pictures of each step in build/dev/ui-check/
 
 # Release / universal build WITHOUT touching ~/Applications
 cd .. && INSTALL=0 mac/build.sh       # → mac/build/RetroHub.app + RetroHub.zip
@@ -103,6 +105,8 @@ Isolation guarantees of the dev app, verified on this Mac after launch:
 - Remaining shared state: the RetroArch side-file folder `config/RetroHub/` (written only if you install RetroArch and turn on a graphics option; each launch overwrites it anyway) and LaunchServices registration of "RetroHub Dev".
 
 **Don't open `mac/build/RetroHub.app`**, the release build. It has the production bundle ID and would create `~/Games` and the real prefs domain.
+
+> **Update 2026-10-22:** `~/Games` (28 empty folders, no files) and the production prefs domain (window size only) were created at 23:52 on 2026-10-21. No session command was running then. The only app on this Mac with the production bundle ID is `mac/build/RetroHub.app`, so it was most likely opened. Both are left in place for you to decide.
 
 Test library (`swift scripts/make-test-library.swift <dir>`, created automatically by `dev-run.sh`):
 - `NES/RetroHub Test Pattern.nes`: a 104-byte NES program I wrote for this purpose (no copyrighted code). It cycles the screen through 8 colors about once a second. It's the only bootable file, and it's unverified until an NES emulator runs it.
@@ -124,7 +128,7 @@ What `--self-test` covers:
 - RetroArch core-option values
 - cover-art response classification
 
-UI, launching and the controller aren't covered. Those are the manual tests.
+`dev-ui-check.sh` (`UIChecks.swift`, debug only) covers the sidebar in the real window: every row must span the sidebar at launch, after the down arrow moves to the next item, after scrolling to the end, and after hiding and showing the sidebar. The rest of the UI, launching and the controller are the manual tests.
 
 ## 4. Defects
 
@@ -137,6 +141,13 @@ UI, launching and the controller aren't covered. Those are the manual tests.
 | F3 | Process | `build.sh` always replaces `~/Applications/RetroHub.app` | Script inspection | `INSTALL=0` opt-out; default unchanged |
 | F4 | Process | There was no way to run a second, isolated copy | — | `dev-build.sh`, `dev-run.sh`, cache folder follows `CFBundleName` |
 
+### Fixed in the UI fix shift (2026-10-22)
+
+| # | Severity | Defect | Evidence | Fix + regression test |
+|---|---|---|---|---|
+| F5 | **High** | **Sidebar showed only icons, with no names or counts.** The sidebar `List` was wrapped in `.safeAreaInset(edge: .bottom)` for the controller status. On macOS 14.4.1, a sidebar `List` inside `.safeAreaInset` or a `VStack` keeps its AppKit `NSOutlineView` column at 38 pt in a 240 pt sidebar, and resizing, navigating or hiding and showing the sidebar never fixes it. Each row's 22 pt icon fits; the name and count badge are squeezed to nothing. The row view, label styling, text color and sidebar width were not the cause. | Pictures the app drew of its own window, plus the AppKit view tree. In a scratch copy: a plain `Text` row, no `Spacer`, no activation rescan, no search, no toolbar, other selections: still 38 pt. Removing the inset: 208 pt. `.padding`/`.overlay` on the `List`: 208 pt. `VStack`, inset before or after the column-width modifier, inset around a `VStack`: 38–39 pt. Probably a SwiftUI bug on macOS 14 (Jor-el may not see it on a newer macOS); not checked on another OS | The `List` stays the sidebar's root view. The controller status now floats in an `.overlay` over 56 pt of `.padding` left below the list, so it looks the same and the last row ends above it (`.contentMargins` was tried and doesn't apply to a macOS 14 `List`). `dev-ui-check.sh`: **FAIL 4 of 5** on the old code (rows 38 pt), **PASS 5 of 5** with the fix (rows 208 pt) |
+| F6 | Low | Strict-concurrency builds warned about `CommandLine.arguments` in the `--self-test` hook, so the "0 under strict concurrency" line above wasn't true for the final Shift 01 code | `swift build -Xswiftc -strict-concurrency=complete` | `ProcessInfo.processInfo.arguments`; strict build now 0 warnings |
+
 ### Open, prioritized for the Mac app (not fixed: these need your manual confirmation or a design decision)
 
 | # | Severity | Finding | Where | Proposed fix |
@@ -146,7 +157,7 @@ UI, launching and the controller aren't covered. Those are the manual tests.
 | O3 | Medium | **No subprocess lifecycle.** No termination handler or exit status. Emulators that quit immediately (missing BIOS or core) fail silently, yet the game is still added to Recently Played. | `Systems.swift:384`, `Library.swift:157` | `Process.terminationHandler` + a `runningGame` state. This is also the hook for music pause/resume (§6) |
 | O4 | Medium | **Full rescan on the main thread at launch and on every app activation**, i.e. every return from a game. Recursive enumeration, so big or network libraries will stall the UI. | `ContentView.swift:25-27`, `Library.swift:119` | Scan off the main actor; publish the results |
 | O5 | Medium | **Couch-mode carousel isn't lazy.** Every cover in the list loads at once; unmatched titles try up to 11 URLs each against libretro's server. | `CouchView.swift:107` | `LazyHStack` |
-| O6 | Low | AppKit warns "reentrant operation in its NSTableView delegate. This warning will become an assert in the future" on every launch | `build/dev/logs/*.log` (sidebar `List`) | Investigate: probably selection or a rescan during the sidebar's first layout |
+| O6 | Low | AppKit warns "reentrant operation in its NSTableView delegate. This warning will become an assert in the future" on every launch | `build/dev/logs/*.log` (sidebar `List`) | Narrowed during F5: it goes away when the sidebar has no `Section`s, and stays with or without the activation rescan, whatever is selected, and with the F5 fix. Not related to the missing labels. Look at the header-less first `Section` |
 | O7 | Low | Controller UX: no auto-repeat on held directions; B in the grid only dismisses errors; only the first controller's name is shown; Home and Options are unused | `ControllerInput.swift` | Part of the Phase 4 design |
 | O8 | Low | Favorites and recents are keyed by absolute path, so changing the games folder or moving files loses them | `Library.swift:12` | Key on a path relative to the root (with migration) |
 | O9 | Low | No `.m3u` multi-disc support, so each disc is listed separately (PS1, Sega CD, Saturn) | `Systems.swift` extensions | Add `m3u`; hide the discs it lists |
@@ -156,7 +167,7 @@ UI, launching and the controller aren't covered. Those are the manual tests.
 
 ## 5. Unverified behavior (needs you, a controller, or an emulator)
 
-- **Everything visual:** sidebar, grid, couch mode, Setup page, alerts.
+- **Everything visual except the sidebar:** grid, couch mode, Setup page, alerts. (The sidebar and the Setup and NES pages are in the `dev-ui-check.sh` pictures, but you haven't confirmed them yet.)
 - **Emulator detection** with a real install. Note that `Emulator.isInstalled` only checks for an app with the exact expected name in the two Applications folders.
 - **Any game launch**, including whether the emulator comes to the front, Spaces behavior in full-screen couch mode, and returning to RetroHub.
 - **Controller connection and every binding.** GameController maps buttons by position. So on Nintendo controllers, the button macOS reports as `buttonA` may be the physical B; that needs checking on hardware.
