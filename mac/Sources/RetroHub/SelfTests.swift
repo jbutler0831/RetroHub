@@ -2,12 +2,13 @@
 import AppKit
 
 /// Checks for the parts of RetroHub that don't need a window: title cleanup, library scanning,
-/// PARAM.SFO parsing, RetroArch options and status color contrast. The Command Line Tools don't
-/// include XCTest, so a debug build runs these itself:
+/// PARAM.SFO parsing, RetroArch options, status color contrast and emulator processes. The
+/// Command Line Tools don't include XCTest, so a debug build runs these itself:
 ///
 ///     swift build && "$(swift build --show-bin-path)/RetroHub" --self-test
 ///
-/// They only touch a temporary folder: no settings, no ~/Games, no network.
+/// They only touch a temporary folder: no settings, no ~/Games, no network. /bin/sleep and
+/// /usr/bin/false stand in for an emulator.
 @MainActor
 enum SelfTests {
     private static var failures = 0
@@ -23,7 +24,7 @@ enum SelfTests {
         for (name, section) in [("titles", titles), ("PARAM.SFO", { sfo(in: tmp.appending(path: "sfo")) }),
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
                                 ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
-                                ("cover art", coverArt), ("appearance", appearance)] {
+                                ("cover art", coverArt), ("appearance", appearance), ("game process", gameProcess)] {
             print("- \(name)")
             section()
         }
@@ -184,6 +185,27 @@ enum SelfTests {
             expect(CoverArt.result(status: status, data: Data()), .offline, "\(status) is retried later")
         }
         expect(CoverArt.result(status: nil, data: Data()), .offline, "no HTTP status is retried later")
+    }
+
+    /// Launcher reports when the emulator's process ends, with its exit status, also when it
+    /// fails straight away; Library uses it to allow one game at a time.
+    private static func gameProcess() {
+        final class Exits: @unchecked Sendable {
+            private let lock = NSLock()
+            private var statuses: [Int32] = []
+            func add(_ status: Int32) { lock.withLock { statuses.append(status) } }
+            var all: [Int32] { lock.withLock { statuses } }
+        }
+        let exits = Exits()
+        let game = try? Launcher.start(URL(filePath: "/bin/sleep"), ["0.5"]) { exits.add($0.terminationStatus) }
+        expect(game?.isRunning, true, "the emulator is running after it starts")
+        _ = try? Launcher.start(URL(filePath: "/usr/bin/false"), []) { exits.add($0.terminationStatus) }
+        let deadline = Date.now + 5
+        while exits.all.count < 2, Date.now < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        expect(exits.all.sorted(), [0, 1], "both ends are reported, with their exit status")
+        expect(game?.isRunning, false, "and the process has ended")
+        expect((try? Launcher.start(URL(filePath: "/nonexistent/emulator"), []) { _ in }) == nil, true,
+               "a missing emulator is an error, not a silent failure")
     }
 
     private static func appearance() {

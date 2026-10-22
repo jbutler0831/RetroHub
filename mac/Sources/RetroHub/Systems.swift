@@ -314,7 +314,8 @@ enum Launcher {
 
     private struct Plan {
         let label: String
-        let start: (URL) throws -> Void
+        /// Starts the game; returns the emulator's process, or nil when macOS opened it (OpenEmu).
+        let start: (URL, @escaping @Sendable (Process) -> Void) throws -> Process?
     }
 
     /// The first installed backend for this system, ready to start a game.
@@ -326,18 +327,19 @@ enum Launcher {
                       let core = cores.first(where: { coreURL($0) != nil }),
                       let url = coreURL(core) else { continue }
                 return Plan(label: "RetroArch (\(core.name))") {
-                    try run(exe, ["-L", url.path] + RetroArchGraphics.arguments(for: system, core: core) + [$0.path])
+                    try start(exe, ["-L", url.path] + RetroArchGraphics.arguments(for: system, core: core) + [$0.path], onExit: $1)
                 }
             case .openEmu:
                 guard let app = Emulator.openEmu.appURL else { continue }
-                return Plan(label: "OpenEmu") {
-                    NSWorkspace.shared.open([$0], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+                return Plan(label: "OpenEmu") { url, _ in
+                    NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+                    return nil
                 }
             case .app(let emulator, let arguments):
                 guard let exe = emulator.executableURL else { continue }
                 // Vita3K runs installed games by title ID, the name of the game's folder.
                 let target: (URL) -> String = emulator == .vita3k ? { $0.lastPathComponent } : { $0.path }
-                return Plan(label: emulator.displayName) { try run(exe, arguments + [target($0)]) }
+                return Plan(label: emulator.displayName) { try start(exe, arguments + [target($0)], onExit: $1) }
             }
         }
         return nil
@@ -374,17 +376,23 @@ enum Launcher {
                          missing: system.backends.first?.emulator)
     }
 
-    static func launch(_ game: Game) throws {
+    /// Starts the game and returns the emulator's process, or nil when macOS opened the emulator
+    /// (OpenEmu, which stays open as a library app after the game). `onExit` runs on a background
+    /// thread when the process ends.
+    static func launch(_ game: Game, onExit: @escaping @Sendable (Process) -> Void) throws -> Process? {
         guard let plan = plan(for: game.system) else {
             throw LaunchError.notReady(readiness(for: game.system).detail ?? "No emulator is set up for this system.")
         }
-        try plan.start(game.bootURL)
+        return try plan.start(game.bootURL, onExit)
     }
 
-    private static func run(_ executable: URL, _ arguments: [String]) throws {
+    static func start(_ executable: URL, _ arguments: [String], onExit: @escaping @Sendable (Process) -> Void) throws -> Process {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        // Set before run(), so a process that quits straight away still reports it.
+        process.terminationHandler = onExit
         try process.run()
+        return process
     }
 }

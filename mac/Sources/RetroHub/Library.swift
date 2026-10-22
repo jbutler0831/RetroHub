@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 struct Game: Identifiable, Hashable {
     let system: GameSystem
@@ -68,6 +68,13 @@ enum SidebarItem: Hashable {
     }
 }
 
+/// A game started from RetroHub, and its emulator's process.
+struct GameSession {
+    let game: Game
+    let process: Process
+    let started: Date
+}
+
 @MainActor
 final class Library: ObservableObject {
     private static let rootKey = "libraryRoot"
@@ -82,6 +89,9 @@ final class Library: ObservableObject {
     @Published private(set) var favorites: Set<String>
     @Published private(set) var lastPlayed: [String: Date]
     @Published var launchError: String?
+    /// The game RetroHub started, while its emulator runs. Not set for OpenEmu, which macOS opens
+    /// and which stays open after the game.
+    @Published private(set) var session: GameSession?
 
     init() {
         let defaults = UserDefaults.standard
@@ -164,13 +174,32 @@ final class Library: ObservableObject {
     }
 
     func play(_ game: Game) {
+        // One game at a time: A pressed again while the emulator starts, or while it's open behind
+        // RetroHub, brings it forward instead of starting a second copy.
+        if let session, session.process.isRunning {
+            NSRunningApplication(processIdentifier: session.process.processIdentifier)?.activate()
+            return
+        }
         do {
-            try Launcher.launch(game)
+            let process = try Launcher.launch(game) { process in
+                DispatchQueue.main.async { MainActor.assumeIsolated { self.ended(process) } }
+            }
+            if let process, process.isRunning {
+                session = GameSession(game: game, process: process, started: .now)
+            }
             lastPlayed[game.key] = .now
             UserDefaults.standard.set(lastPlayed, forKey: Self.lastPlayedKey)
         } catch {
             launchError = error.localizedDescription
         }
+    }
+
+    /// RetroHub comes back to the front when the game is closed, including from another Space
+    /// while couch mode is full screen. macOS doesn't allow it if you've moved on to another app.
+    private func ended(_ process: Process) {
+        guard session?.process === process else { return }
+        session = nil
+        NSApp.activate()
     }
 
     static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
