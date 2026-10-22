@@ -1,6 +1,11 @@
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before the window first draws, so it doesn't flash the system appearance.
+        NSApp.appearance = AppAppearance.saved.nsAppearance
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -29,6 +34,7 @@ struct RetroHubApp: App {
     @StateObject private var library = Library()
     @StateObject private var controller = ControllerInput()
     @StateObject private var navigator = Navigator()
+    @AppStorage(AppAppearance.key) private var appearance = AppAppearance.system
 
     var body: some Scene {
         // One window: every window's game grid acts on each controller press, so with two open,
@@ -39,19 +45,23 @@ struct RetroHubApp: App {
                 .environmentObject(controller)
                 .environmentObject(navigator)
                 .frame(minWidth: 760, minHeight: 480)
+                // RetroHub's windows, menus and alerts only; the Mac's own appearance is left alone.
+                .onChange(of: appearance) { NSApp.appearance = appearance.nsAppearance }
         }
         .defaultSize(width: 1100, height: 720)
         .commands {
             SidebarCommands()
-            BrowserCommands(navigator: navigator, library: library)
+            BrowserCommands(navigator: navigator, library: library, appearance: $appearance)
         }
     }
 }
 
-/// Menu bar equivalents of the toolbar and the controller's LB, RB and Menu buttons.
+/// Menu bar equivalents of the toolbar and the controller's LB, RB and Menu buttons, and the
+/// appearance setting from Setup.
 private struct BrowserCommands: Commands {
     let navigator: Navigator
     let library: Library
+    @Binding var appearance: AppAppearance
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -71,6 +81,10 @@ private struct BrowserCommands: Commands {
             Button("Couch Mode") { perform { $0.setCouchMode(!$0.couchMode, library: $1) } }
             Button("Rescan Games") { perform { $1.rescan() } }
                 .keyboardShortcut("r")
+            Divider()
+            Picker("Appearance", selection: $appearance) {
+                ForEach(AppAppearance.allCases) { Text($0.label).tag($0) }
+            }
             Divider()
         }
     }

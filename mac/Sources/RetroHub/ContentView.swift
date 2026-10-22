@@ -207,7 +207,7 @@ private struct CountBadge: View {
 
     private var foreground: AnyShapeStyle {
         if prominence == .increased { return AnyShapeStyle(.white) }
-        return setupNeeded ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary)
+        return setupNeeded ? AnyShapeStyle(Color.warning) : AnyShapeStyle(.secondary)
     }
 }
 
@@ -217,7 +217,7 @@ private struct ControllerStatus: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: name == nil ? "gamecontroller" : "gamecontroller.fill")
-                .foregroundStyle(name == nil ? Color.secondary : Color.green)
+                .foregroundStyle(name == nil ? Color.secondary : Color.success)
             Text(name ?? "No controller")
                 .font(.callout)
                 .foregroundStyle(name == nil ? .secondary : .primary)
@@ -435,7 +435,7 @@ private struct SystemStatus: View {
         HStack(spacing: 8) {
             StatusPill(text: readiness.summary,
                        symbol: readiness.ready ? "checkmark.circle.fill" : "exclamationmark.circle.fill",
-                       color: readiness.ready ? .green : .orange)
+                       color: readiness.ready ? .systemGreen : .systemOrange)
                 .help(readiness.detail ?? "")
             if let missing = readiness.missing {
                 Button("Get \(missing.displayName)") { NSWorkspace.shared.open(missing.downloadURL) }

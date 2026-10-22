@@ -4,6 +4,7 @@ import SwiftUI
 struct SetupView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var controller: ControllerInput
+    @AppStorage(AppAppearance.key) private var appearance = AppAppearance.system
 
     private var installedCount: Int {
         Emulator.allCases.filter(\.isInstalled).count
@@ -75,6 +76,17 @@ struct SetupView: View {
                         }
                     }
                 }
+
+                section("Appearance", subtitle: "For RetroHub only: your Mac's own setting stays as it is. Couch mode always has its dark TV look.") {
+                    card {
+                        Picker("Appearance", selection: $appearance) {
+                            ForEach(AppAppearance.allCases) { Text($0.label).tag($0) }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                    }
+                }
             }
             .padding(28)
             .frame(maxWidth: 900, alignment: .leading)
@@ -144,7 +156,7 @@ private struct GraphicsCard: View {
                 Label("Download RetroArch's shaders first: Main Menu › Online Updater › Update Slang Shaders.",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.warning)
             }
             Divider()
             row("3D resolution", detail: "N64, PlayStation and Dreamcast. Higher looks sharper but needs a faster Mac.") {
@@ -204,7 +216,7 @@ private struct EmulatorCard: View {
                 if emulator.isInstalled {
                     Label("Installed", systemImage: "checkmark.circle.fill")
                         .font(.callout.weight(.medium))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.success)
                 } else {
                     Button("Download") { NSWorkspace.shared.open(emulator.downloadURL) }
                         .buttonStyle(.borderedProminent)

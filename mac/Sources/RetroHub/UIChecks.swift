@@ -10,7 +10,8 @@ import AppKit
 /// window, menu shortcuts, simulated controller presses) and checks the result. A picture of the
 /// window is saved to the folder after each step (the app draws it itself, so no Screen Recording
 /// permission is needed), and the app quits with 0 if every check passed. `--rows-only` checks
-/// just the sidebar rows, for runs at other sidebar icon sizes.
+/// just the sidebar rows, for runs at other sidebar icon sizes; `--relaunch` checks that the
+/// appearance the full run ended on (Dark) was kept.
 ///
 /// The steps expect fresh settings and the test library from scripts/make-test-library.swift.
 @MainActor
@@ -28,17 +29,22 @@ enum UIChecks {
     private static var stepNumber = 0
     private static var folder: URL?
     private static var rowsOnly = false
+    private static var relaunch = false
     private static var window: NSWindow!
     private static var activity: NSObjectProtocol?
     /// The sidebar's scroll position before a step, to tell whether the step scrolled it.
     private static var sidebarOrigin = NSPoint.zero
     private static var favoritesBefore: [String] = []
+    /// System Settings › Appearance when the checks started; RetroHub's setting mustn't change it.
+    private static var macAppearanceAtLaunch = ""
 
     static func startIfRequested() {
         let arguments = ProcessInfo.processInfo.arguments
         guard let flag = arguments.firstIndex(of: "--ui-check") else { return }
         folder = arguments.indices.contains(flag + 1) ? URL(filePath: arguments[flag + 1]) : nil
         rowsOnly = arguments.contains("--rows-only")
+        relaunch = arguments.contains("--relaunch")
+        macAppearanceAtLaunch = macAppearance
         // App Nap would hold back the timers below while the window isn't in front.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "RetroHub UI checks")
         setvbuf(stdout, nil, _IONBF, 0)
@@ -51,8 +57,8 @@ enum UIChecks {
             }
             window = main
             window.setContentSize(NSSize(width: 1100, height: 680))
-            if rowsOnly {
-                steps = rowSteps()
+            if rowsOnly || relaunch {
+                steps = rowsOnly ? rowSteps() : relaunchSteps()
                 runNextStep()
             } else {
                 steps = allSteps()
@@ -82,7 +88,7 @@ enum UIChecks {
         let step = steps.removeFirst()
         stepNumber += 1
         print("- \(step.name)")
-        if !window.isKeyWindow && !rowsOnly {
+        if !window.isKeyWindow && !rowsOnly && !relaunch {
             print("  (the window isn't active, so keyboard and menu checks may fail)")
         }
         sidebarOrigin = sidebar?.visibleRect.origin ?? .zero
@@ -100,6 +106,15 @@ enum UIChecks {
         [Step(name: "rows at this sidebar size", action: {}, check: checkRows)]
     }
 
+    private static func relaunchSteps() -> [Step] {
+        [Step(name: "relaunch keeps Dark", action: {}, check: {
+            expect(UserDefaults.standard.string(forKey: AppAppearance.key) == "dark", "Dark is still saved")
+            expect(NSApp.appearance?.name == .darkAqua, "and applied at launch")
+            expect(isDark(window.effectiveAppearance), "the window draws dark")
+            expect(macAppearance == macAppearanceAtLaunch, "the Mac's own appearance is unchanged: \(macAppearance)")
+        })]
+    }
+
     private static func allSteps() -> [Step] {
         [
             Step(name: "launch", action: {}, check: {
@@ -107,6 +122,8 @@ enum UIChecks {
                 expect(window.title == "Setup", "opens on Setup (no emulators): \(window.title)")
                 expect(menuItem(key: "n", title: "Window") == nil, "no New Window command, so one controller press acts once")
                 expect(menuItem(key: ",", title: "Setup") != nil, "Setup… (⌘,) is in the app menu")
+                expect(UserDefaults.standard.string(forKey: AppAppearance.key) == nil && NSApp.appearance == nil,
+                       "follows the system appearance by default")
             }),
             Step(name: "down arrow in the sidebar", action: {
                 if let sidebar { window.makeFirstResponder(sidebar) }
@@ -221,18 +238,49 @@ enum UIChecks {
                 splitView?.setPosition(240, ofDividerAt: 0)
                 window.setContentSize(NSSize(width: 1500, height: 900))
             }, check: checkRows),
-            Step(name: "dark appearance", action: { NSApp.appearance = NSAppearance(named: .darkAqua) }, check: checkRows),
+            // NES is selected; Super Nintendo (row 6) shows an unselected orange badge.
+            Step(name: "View menu Appearance Dark", wait: 1.2, action: {
+                sidebar?.scrollRowToVisible(6)
+                chooseInMenu(.dark)
+            }, check: {
+                checkAppearance(.dark, "View › Appearance › Dark")
+                checkRows()
+                checkBadgeContrast()
+            }),
+            Step(name: "Setup in Dark", wait: 1.2, action: {
+                shortcut(",")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { scrollPageToEnd() }
+            }, check: {
+                expect(window.title == "Setup", "⌘, shows Setup: \(window.title)")
+                expect(appearanceControl.map { $0.label(forSegment: $0.selectedSegment) } == AppAppearance.dark.label,
+                       "Setup's Appearance control shows Dark")
+            }),
+            Step(name: "Setup Appearance Light", wait: 1.2, action: { chooseInSetup(.light) }, check: {
+                checkAppearance(.light, "Setup › Appearance › Light")
+            }),
+            Step(name: "NES in Light", wait: 1.2, action: {
+                shortcut("]"); shortcut("]"); shortcut("]")
+                sidebar?.scrollRowToVisible(6)
+            }, check: {
+                expect(window.title == "NES", "⌘] from Setup three times reaches NES: \(window.title)")
+                checkBadgeContrast()
+            }),
             Step(name: "couch mode", wait: 2.5, action: {
-                NSApp.appearance = nil
                 window.setContentSize(NSSize(width: 1100, height: 680))
                 controller(.toggleCouchMode)
             }, check: {
                 expect(window.styleMask.contains(.fullScreen), "Menu opens couch mode full screen")
+                let luminance = averageLuminance()
+                expect(luminance < 0.2, String(format: "couch mode stays dark with RetroHub set to Light (average luminance %.2f)", luminance))
             }),
             Step(name: "back out of couch mode", wait: 2.5, action: { controller(.back) }, check: {
                 expect(!window.styleMask.contains(.fullScreen), "B leaves couch mode")
                 expect(window.title == "NES", "still on NES: \(window.title)")
+                expect(!isDark(window.effectiveAppearance), "the browser is Light again")
                 checkRows()
+            }),
+            Step(name: "View menu Appearance Follow System", wait: 1.2, action: { chooseInMenu(.system) }, check: {
+                checkAppearance(.system, "View › Appearance › Follow System")
             }),
             Step(name: "second window", wait: 1.5, action: openSecondWindow, check: {}),
             Step(name: "Y with every window on NES", action: {
@@ -241,6 +289,9 @@ enum UIChecks {
             }, check: {
                 let changed = Set(favorites).symmetricDifference(favoritesBefore)
                 expect(changed.count == 1, "one press of Y toggles one game, once: \(favoritesBefore) → \(favorites)")
+            }),
+            Step(name: "Dark again for the relaunch run", action: { chooseInMenu(.dark) }, check: {
+                expect(UserDefaults.standard.string(forKey: AppAppearance.key) == "dark", "Dark is saved")
             }),
         ]
     }
@@ -281,6 +332,49 @@ enum UIChecks {
                "\(rows.count) rows, narrowest \(Int(narrowest))pt, in a \(Int(width))pt sidebar")
     }
 
+    /// The setting is saved, applied to RetroHub, shown in View › Appearance, and leaves the Mac's
+    /// own appearance alone.
+    private static func checkAppearance(_ appearance: AppAppearance, _ label: String) {
+        expect(UserDefaults.standard.string(forKey: AppAppearance.key) == appearance.rawValue, "\(label) is saved")
+        expect(NSApp.appearance?.name == appearance.nsAppearance?.name, "and applied to RetroHub")
+        let dark = appearance == .system ? macAppearance == "Dark" : appearance == .dark
+        expect(isDark(window.effectiveAppearance) == dark, "the window draws \(dark ? "dark" : "light")")
+        expect(appearanceItem(appearance)?.state == .on, "the View menu shows \(appearance.label) checked")
+        expect(macAppearance == macAppearanceAtLaunch, "the Mac's own appearance is unchanged: \(macAppearance)")
+    }
+
+    /// Text contrast of Super Nintendo's count badge (orange, with a warning sign: there's no
+    /// emulator for it) as drawn in the window: the most common pale orange pixel, the badge's
+    /// tint, against the strongest orange pixel, its text and sign. Needs 4.5:1.
+    private static func checkBadgeContrast() {
+        guard let sidebar, let frame = window.contentView?.superview else { return expect(false, "no sidebar") }
+        var rect = sidebar.rect(ofRow: 6)
+        rect.size.width /= 2
+        rect.origin.x += rect.width
+        let area = sidebar.convert(rect, to: frame)
+        guard let picture = frame.bitmapImageRepForCachingDisplay(in: area) else { return expect(false, "no picture of the badge") }
+        frame.cacheDisplay(in: area, to: picture)
+        var tints: [NSColor: Int] = [:]
+        var marks: [NSColor] = []
+        for x in 0..<picture.pixelsWide {
+            for y in 0..<picture.pixelsHigh {
+                guard let pixel = picture.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                let warmth = pixel.redComponent - pixel.blueComponent
+                if warmth > 0.3 {
+                    marks.append(pixel)
+                } else if warmth > 0.06 {
+                    tints[pixel, default: 0] += 1
+                }
+            }
+        }
+        guard let tint = tints.max(by: { $0.value < $1.value })?.key, !marks.isEmpty else {
+            return expect(false, "found the orange badge next to Super Nintendo")
+        }
+        let ratio = marks.map { $0.contrast(with: tint) }.max() ?? 0
+        expect(ratio >= 4.5, String(format: "the orange badge's text is readable in %@: %.2f:1",
+                                    isDark(window.effectiveAppearance) ? "Dark" : "Light", ratio))
+    }
+
     /// The selected row is in view, below the toolbar.
     private static func checkSelectionVisible() {
         guard let sidebar, let scroll = sidebar.enclosingScrollView, sidebar.selectedRow >= 0 else {
@@ -307,6 +401,51 @@ enum UIChecks {
     /// Keyboard focus is in the game grid: not the sidebar and not a text field.
     private static var gamesFocused: Bool {
         !sidebarFocused && !(window.firstResponder is NSText) && window.firstResponder is NSView
+    }
+
+    private static var macAppearance: String {
+        UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["AppleInterfaceStyle"] as? String ?? "Light"
+    }
+
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    }
+
+    /// An item in View › Appearance.
+    private static func appearanceItem(_ appearance: AppAppearance) -> NSMenuItem? {
+        func search(_ menu: NSMenu?) -> NSMenuItem? {
+            for item in menu?.items ?? [] {
+                if item.title == "Appearance", let found = item.submenu?.items.first(where: { $0.title == appearance.label }) {
+                    return found
+                }
+                if let found = search(item.submenu) { return found }
+            }
+            return nil
+        }
+        return search(NSApp.mainMenu)
+    }
+
+    /// The Appearance control on the Setup page.
+    private static var appearanceControl: NSSegmentedControl? {
+        func search(_ view: NSView) -> NSSegmentedControl? {
+            if let control = view as? NSSegmentedControl,
+               (0..<control.segmentCount).contains(where: { control.label(forSegment: $0) == AppAppearance.system.label }) {
+                return control
+            }
+            return view.subviews.lazy.compactMap(search).first
+        }
+        return window.contentView.flatMap(search)
+    }
+
+    /// Average luminance of the window as drawn, from 0 (black) to 1 (white).
+    private static func averageLuminance() -> Double {
+        guard let frame = window.contentView?.superview,
+              let picture = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return 1 }
+        frame.cacheDisplay(in: frame.bounds, to: picture)
+        let pixels = stride(from: 0, to: picture.pixelsWide, by: 16).flatMap { x in
+            stride(from: 0, to: picture.pixelsHigh, by: 16).compactMap { picture.colorAt(x: x, y: $0) }
+        }
+        return pixels.isEmpty ? 1 : pixels.map(\.luminance).reduce(0, +) / Double(pixels.count)
     }
 
     private static var favorites: [String] {
@@ -383,6 +522,35 @@ enum UIChecks {
         if NSApp.mainMenu?.performKeyEquivalent(with: event) != true {
             print("  (no menu item for ⌘\(character))")
         }
+    }
+
+    private static func chooseInMenu(_ appearance: AppAppearance) {
+        guard let item = appearanceItem(appearance), let menu = item.menu else {
+            return print("  (no View › Appearance › \(appearance.label))")
+        }
+        menu.performActionForItem(at: menu.index(of: item))
+    }
+
+    private static func chooseInSetup(_ appearance: AppAppearance) {
+        guard let control = appearanceControl,
+              let segment = (0..<control.segmentCount).first(where: { control.label(forSegment: $0) == appearance.label })
+        else { return print("  (no Appearance control on the page)") }
+        control.selectedSegment = segment
+        control.sendAction(control.action, to: control.target)
+    }
+
+    /// Scrolls the page beside the sidebar to its end.
+    private static func scrollPageToEnd() {
+        func scrollViews(in view: NSView) -> [NSScrollView] {
+            ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap { scrollViews(in: $0) }
+        }
+        guard let scroll = window.contentView.map({ scrollViews(in: $0) })?
+            .filter({ $0.documentView !== sidebar })
+            .max(by: { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }),
+              let page = scroll.documentView else { return }
+        let clip = scroll.contentView
+        clip.scroll(to: NSPoint(x: 0, y: page.isFlipped ? max(0, page.frame.height - clip.bounds.height) : 0))
+        scroll.reflectScrolledClipView(clip)
     }
 
     private static func controller(_ command: ControllerCommand) {

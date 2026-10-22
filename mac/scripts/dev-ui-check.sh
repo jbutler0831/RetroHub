@@ -1,7 +1,8 @@
 #!/bin/bash
 # Runs the window checks in UIChecks.swift in "RetroHub Dev Check", a debug build with its own
-# bundle ID. Its settings are wiped before each run, so every run starts like a first launch, and
-# RetroHub Dev's settings, favorites and window are never touched. The window comes to the front
+# bundle ID. Its settings are wiped before each run (except the relaunch run, which checks the
+# appearance the full run saved), so runs start like a first launch, and RetroHub Dev's settings,
+# favorites and window are never touched. The window comes to the front
 # for about a minute and goes full screen once (couch mode); clicking elsewhere meanwhile makes
 # the keyboard and menu checks fail. Pictures of each step go to build/dev/ui-check. Exits
 # non-zero if a check fails.
@@ -26,16 +27,18 @@ CONFIG=debug NAME="$NAME" BUNDLE_ID="$BUNDLE_ID" scripts/dev-build.sh
 rm -rf "$OUT"
 
 status=0
-# Starts from fresh settings; -libraryRoot and the other arguments apply to this run only. Opened
-# with `open` so macOS brings the window to the front: keyboard focus and menu commands only behave
-# normally in the active window. Output goes to <name>.log, then to the terminal.
+fresh() {
+    defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
+    rm -rf ~/Library/"Saved Application State/$BUNDLE_ID.savedState"
+}
+# -libraryRoot and the other arguments apply to this run only. Opened with `open` so macOS brings
+# the window to the front: keyboard focus and menu commands only behave normally in the active
+# window. Output goes to <name>.log, then to the terminal.
 run() {
     local name=$1; shift
     local log="$PWD/$OUT/$name.log"
     mkdir -p "$OUT"
     : > "$log"
-    defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
-    rm -rf ~/Library/"Saved Application State/$BUNDLE_ID.savedState"
     open -W -n --stdout "$log" --stderr "$log" "$APP" --args -libraryRoot "$LIBRARY" "$@" &
     local opener=$!
     local waited=0
@@ -51,12 +54,19 @@ run() {
     grep -q "^PASS:" "$log" || status=1
 }
 
+fresh
 run checks --ui-check "$PWD/$OUT"
+# With the settings the full run left: it ended on Dark.
+echo "Relaunch:"
+run relaunch --ui-check "$PWD/$OUT/relaunch" --relaunch
 # The sidebar at the other icon sizes in System Settings › Appearance.
 echo "Sidebar icon size Small:"
+fresh
 run small -NSTableViewDefaultSizeMode 1 --ui-check "$PWD/$OUT/small" --rows-only
 echo "Sidebar icon size Large:"
+fresh
 run large -NSTableViewDefaultSizeMode 3 --ui-check "$PWD/$OUT/large" --rows-only
+fresh
 
 echo "Pictures of each step: mac/$OUT"
 exit $status

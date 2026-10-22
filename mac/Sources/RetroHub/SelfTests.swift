@@ -1,9 +1,9 @@
 #if DEBUG
-import Foundation
+import AppKit
 
 /// Checks for the parts of RetroHub that don't need a window: title cleanup, library scanning,
-/// PARAM.SFO parsing and RetroArch options. The Command Line Tools don't include XCTest, so a
-/// debug build runs these itself:
+/// PARAM.SFO parsing, RetroArch options and status color contrast. The Command Line Tools don't
+/// include XCTest, so a debug build runs these itself:
 ///
 ///     swift build && "$(swift build --show-bin-path)/RetroHub" --self-test
 ///
@@ -23,7 +23,7 @@ enum SelfTests {
         for (name, section) in [("titles", titles), ("PARAM.SFO", { sfo(in: tmp.appending(path: "sfo")) }),
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
                                 ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
-                                ("cover art", coverArt)] {
+                                ("cover art", coverArt), ("appearance", appearance)] {
             print("- \(name)")
             section()
         }
@@ -184,6 +184,55 @@ enum SelfTests {
             expect(CoverArt.result(status: status, data: Data()), .offline, "\(status) is retried later")
         }
         expect(CoverArt.result(status: nil, data: Data()), .offline, "no HTTP status is retried later")
+    }
+
+    private static func appearance() {
+        expect(AppAppearance.allCases.map(\.label), ["Follow System", "Light", "Dark"], "the appearance choices")
+        expect(AppAppearance.system.nsAppearance == nil, true, "Follow System leaves the appearance to macOS")
+        expect(AppAppearance.light.nsAppearance?.name, .aqua, "Light")
+        expect(AppAppearance.dark.nsAppearance?.name, .darkAqua, "Dark")
+
+        // Status text needs 4.5:1 wherever it's drawn: on the window, on its own 14% tint in the
+        // status pill, and (orange only) on an 18% tint in the sidebar's count badge. The sidebar's
+        // material, as drawn on macOS 14.4, is darker than the window in Light mode and lighter in Dark.
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let sidebar = name == .aqua ? NSColor(srgbRed: 227 / 255, green: 228 / 255, blue: 237 / 255, alpha: 1)
+                                        : NSColor(srgbRed: 56 / 255, green: 59 / 255, blue: 65 / 255, alpha: 1)
+            var window = sidebar
+            NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+                window = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)!
+            }
+            let places = [(window, 0.0, "window"), (window, 0.14, "pill"), (sidebar, 0.18, "badge")]
+            for (color, colorName, drawnOn) in [(NSColor.systemOrange, "orange", places), (.systemGreen, "green", Array(places.prefix(2)))] {
+                var text = color, tint = color
+                NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+                    text = color.readable.usingColorSpace(.sRGB)!
+                    tint = color.usingColorSpace(.sRGB)!
+                }
+                for (backdrop, opacity, place) in drawnOn {
+                    let ratio = text.contrast(with: backdrop.blended(withFraction: opacity, of: tint)!)
+                    expect(ratio >= 4.5, true, String(format: "%@ text on the %@ in %@: %.2f:1", colorName, place,
+                                                      name == .aqua ? "Light" : "Dark", ratio))
+                }
+            }
+        }
+    }
+}
+
+extension NSColor {
+    /// WCAG relative luminance, of the color in sRGB.
+    var luminance: Double {
+        guard let rgb = usingColorSpace(.sRGB) else { return 0 }
+        func channel(_ value: CGFloat) -> Double {
+            value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(rgb.redComponent) + 0.7152 * channel(rgb.greenComponent) + 0.0722 * channel(rgb.blueComponent)
+    }
+
+    /// WCAG contrast ratio, from 1 (none) to 21 (black on white).
+    func contrast(with other: NSColor) -> Double {
+        let (a, b) = (luminance, other.luminance)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 }
 #endif
