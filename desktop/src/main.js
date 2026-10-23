@@ -12,12 +12,17 @@ const graphicsOptions = require('./graphics');
 const RECENT_LIMIT = 24;
 // `--console` starts full screen in couch mode, for devices that boot straight into RetroHub.
 const consoleMode = process.argv.includes('--console');
+// `--dev` (npm run dev) keeps its settings in .devdata/desktop and its games in .devdata/Games at
+// the repository root, like the Mac app's RetroHub Dev, so a real library and settings are never
+// touched.
+const devData = process.argv.includes('--dev') ? path.join(__dirname, '../../.devdata') : null;
+if (devData) app.setPath('userData', path.join(devData, 'desktop'));
 
 // ---- Settings ---------------------------------------------------------------
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let settings = {
-  libraryRoot: path.join(os.homedir(), 'Games'),
+  libraryRoot: devData ? path.join(devData, 'Games') : path.join(os.homedir(), 'Games'),
   favorites: [],
   lastPlayed: {},
   emulatorPaths: {},

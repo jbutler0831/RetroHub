@@ -9,6 +9,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "dev": "electron . --dev",
     "test": "node --test test/",
     "dist": "electron-builder --publish never"
   },
