@@ -5,8 +5,8 @@ Short version for our shared project. The details are in `docs/JSTAR_SHIFT01_AUD
 ## Where the work is
 
 - **Starting point:** J-Star started from a ZIP of `main`. It turned out to be **exactly v1.6** (`dd37423`), file for file.
-- **The branch:** all the work is replayed onto a branch from `origin/main`, **`jstar/shift-01-03`**: 9 commits, one topic each, all building.
-- **Nothing pushed yet.** We'd like your OK first. J-Star also needs write access.
+- **The branch:** all the work is replayed onto a branch from `origin/main`, **`jstar/shift-01-03`**: 12 commits, one topic each, all building.
+- **Nothing pushed yet.** J-Star's account has push access; the branch goes up as a pull request for you to review, never straight to `main`.
 - **Rules for agents:** we added `AGENTS.md`. Agents never push to `main`, never merge, never force-push, and never change remotes; a person approves every push; and no games, BIOS, credentials or build output go into commits.
 
 ## Mac app changes (the Windows/Linux app is untouched)
@@ -27,7 +27,7 @@ Short version for our shared project. The details are in `docs/JSTAR_SHIFT01_AUD
   - Each list remembers its picked game.
 - **Appearance:** Follow System / Light / Dark, in Setup and the View menu. It affects RetroHub only. Orange and green status text is now readable in Light mode: it measured 1.55:1, now 5.6:1.
 - **Developer tools** (debug builds only):
-  - `--self-test`: 184 checks;
+  - `--self-test`: 188 checks;
   - `scripts/dev-ui-check.sh`: window checks;
   - Controller Diagnostics: shows each raw press, the action it made, and the result;
   - `scripts/dev-inventory.sh`: read-only. Gives READY / SETUP_REQUIRED / UNKNOWN / UNSUPPORTED for each system, from installed emulators, their CPU architecture, cores, and the firmware those cores list.
@@ -42,6 +42,6 @@ Short version for our shared project. The details are in `docs/JSTAR_SHIFT01_AUD
 ## Questions for you
 
 1. Is `github.com/jbutler0831/RetroHub` the repo we should both use, with `main` as the base?
-2. OK to give J-Star Write access, protect `main` (pull request + one approval, no force pushes) and add a small CI check (Mac build + self-tests, desktop syntax check)?
+2. OK to protect `main` (pull request + one approval, no force pushes) and add a small CI check (Mac build + self-tests, desktop syntax check)?
 3. Any plans of yours that touch the Mac sidebar, controller input or `Systems.swift`, so we don't collide?
 4. Should both apps eventually read one shared systems/emulators catalog, instead of keeping `Systems.swift` and `systems.js` in step by hand?

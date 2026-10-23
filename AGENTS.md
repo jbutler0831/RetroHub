@@ -51,6 +51,10 @@ person confirms them. Don't report them as passed from simulated input.
 
 ## Keeping the developer's own setup safe
 
+- **Build from a `git clone`**, not a downloaded ZIP. macOS marks every file from a browser download,
+  and running `./build.sh` from such a copy shows "cannot be opened because the developer cannot be
+  verified", then waits for an answer. Don't remove the mark, choose Open Anyway, or run the script
+  with `bash` to get past it: clone the repository instead.
 - Run the Mac app as **RetroHub Dev** (`mac/scripts/dev-run.sh`): its own bundle ID, settings and
   test games folder. Don't open `mac/build/RetroHub.app`, which uses the real settings and creates
   `~/Games`.

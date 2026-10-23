@@ -9,9 +9,9 @@ Date: 2026-10-22 · Mac: MacBook Pro 2019 (MacBookPro16,1), Intel Core i9-9980HK
 | C. DualSense | **UNVERIFIED — needs you** | Diagnostics tool built; test procedure in §4.4 |
 | D. Compatibility inventory | **PASS** (read-only, automated) | `scripts/dev-inventory.sh`: all 29 systems SETUP_REQUIRED on this Mac (no emulators installed) |
 | E. First NES game | **NOT STARTED — needs your approval** | Test ROM validated; RetroArch 1.22.2 Universal and an x86_64 Mesen core exist; steps in §6.4 |
-| F. GitHub migration | **PASS** (local only) | ZIP = `origin/main` exactly; branch `jstar/shift-01-03` (9 commits) in the clone; same tree, 184 self-tests pass |
+| F. GitHub migration | **PASS** (local only) | ZIP = `origin/main` exactly; branch `jstar/shift-01-03` (12 commits with the follow-up) in the clone; same tree, 184 self-tests pass |
 | Build | **PASS** | Debug, strict-concurrency and universal release: 0 warnings; release has no debug code |
-| Self-tests | **PASS** | 184 (112 before this shift) |
+| Self-tests | **PASS** | 188 after the follow-up (§11); 184 at the end of the shift, 112 before it |
 | Window checks | **PENDING** | Need the Mac's screen: §9 |
 
 ---
@@ -226,7 +226,7 @@ What it doesn't record: about the device, only its name and category; no other i
 
 ### Test procedure (please run; I'll read the log afterwards)
 
-Start: `mac/scripts/dev-run.sh --controller-diagnostics`. Keep RetroHub Dev in front: macOS only sends controller input to the frontmost app.
+Start, in the clone: `mac/scripts/dev-run.sh --controller-diagnostics`. Keep RetroHub Dev in front: macOS only sends controller input to the frontmost app.
 
 | # | Do | Expected | Observed |
 |---|---|---|---|
@@ -295,7 +295,7 @@ A lawful alternative with more to look at: the NES port of the 240p Test Suite (
    - then Online Updater › Update Core Info Files.
    - Then run `mac/scripts/dev-inventory.sh`. Expected: NES **READY**, "RetroArch (Mesen)", Mesen built for x86_64.
 3. **DualSense in RetroArch:** check Settings › Drivers › Controller (write the value down), then Settings › Input › Port 1 Controls. The D-pad should move RetroArch's menu. If it doesn't, stop and tell me before changing drivers.
-4. **Direct launch:** Load Core › Mesen. Load Content › `.devdata/Games/NES/RetroHub Test Pattern.nes`. Expected: a full-screen color changing about once a second. Quit with Esc (press again if asked) or ⌘Q.
+4. **Direct launch:** Load Core › Mesen. Load Content › `.devdata/Games/NES/RetroHub Test Pattern.nes` in the clone. Expected: a full-screen color changing about once a second. Quit with Esc (press again if asked) or ⌘Q.
 5. **Through RetroHub Dev:** `scripts/dev-run.sh --controller-diagnostics`. In NES, the header should say "Plays with RetroArch (Mesen)". Select RetroHub Test Pattern and press **Cross**. Expected: RetroArch opens with the pattern, and the log shows `game started …` and `frontmost app: RetroArch`.
 6. **Exit:** Esc or ⌘Q in RetroArch. Expected: `game closed …, exit status 0` and `frontmost app: RetroHub Dev`.
 7. **Verify:**
@@ -319,7 +319,7 @@ Gameplay stays **unverified** until you've seen it.
 - **The repository:**
   - **Where:** `github.com/jbutler0831/RetroHub`. Identified from the bundle ID `io.github.jbutler0831.retrohub`, the author `jbutler0831` in `desktop/package.json`, and the ZIP name `RetroHub-main`.
   - **Access:** public; read without credentials (`git ls-remote`, `git clone`).
-  - **Please confirm** it's the repository Jor-el means us to use.
+  - **Confirmed** by J-Star after this shift, with push access for J-Star's account.
 - **Remote state:**
   - **Default branch:** `main` = tag `v1.6` = `dd37423`.
   - **Other refs:** `release-hardening`, already merged in PR #1 (`fc939a6`); tags v1.0–v1.6.
@@ -330,7 +330,7 @@ Gameplay stays **unverified** until you've seen it.
 
 1. **Fresh clone:** a separate folder, made with `git clone`. Its only remote is `origin`, as cloned. The original working copy was left as it is.
 2. **Branch:** `jstar/shift-01-03` from `origin/main` (`dd37423`).
-3. **Commits:** the 9 local commits replayed with `git format-patch` / `git am`, so no remote was added to either repository. The clone was given a repository-level identity (Jay, with J-Star's GitHub noreply address), so no machine name appears as committer.
+3. **Commits:** the local commits replayed with `git format-patch` / `git am`, so no remote was added to either repository. The clone was given a repository-level identity (Jay, with J-Star's GitHub noreply address), so no machine name appears as committer.
 4. **Verified:**
    - The branch's tree, `c7f25f8e…`, is identical to the working copy's.
    - Debug build: 0 warnings.
@@ -354,7 +354,7 @@ This handoff document is committed last in both repositories. Each Shift 03 topi
 
 **To push later, only with your OK:**
 - Command, in the clone: `git push -u origin jstar/shift-01-03`.
-- **Prerequisite:** it needs J-Star's GitHub account to have write access. `gh` isn't installed, and no credentials were used.
+- **Access:** J-Star's account has push access (confirmed by J-Star). `gh` isn't installed, and no credentials were used.
 
 ### Proposed GitHub setup (Jor-el decides; nothing changed)
 
@@ -442,7 +442,7 @@ The window checks need a logged-in screen, so they stay manual for now. The runn
 > - Setup warnings in the sidebar.
 > - Follow System / Light / Dark, with readable status colors.
 > - Debug tools:
->   - `--self-test` (184 checks);
+>   - `--self-test` (188 checks);
 >   - window checks (`scripts/dev-ui-check.sh`);
 >   - Controller Diagnostics;
 >   - a read-only compatibility inventory;
@@ -451,7 +451,7 @@ The window checks need a logged-in screen, so they stay manual for now. The runn
 >
 > **Verified**
 > - Builds: debug, strict concurrency, and universal release, all with 0 warnings.
-> - Self-tests: 184 pass.
+> - Self-tests: 188 pass.
 > - Window checks: <result of the pending run>.
 >
 > **Not verified**
@@ -480,10 +480,14 @@ The window checks need a logged-in screen, so they stay manual for now. The runn
 | Migrated branch | the same, in the clone | PASS, 184 |
 | Inventory | `scripts/dev-inventory.sh [--json]` | Runs; valid JSON (29 systems) |
 | Window checks | `scripts/dev-ui-check.sh` | **Pending**: 77 checks expected (47 before), plus relaunch 4, Small 1, Large 1 |
+| Follow-up, in the clone | debug, strict, `INSTALL=0 ./build.sh`, `--self-test` | PASS: 0 warnings, `x86_64 arm64`, codesign OK, no prompt from macOS; 188 checks with the §11 fix |
 
 Two oddities:
-- **`build.sh` stalled twice:** each time it was started from a background shell, it sat idle before starting the compiler, without output. Run with `bash -x`, it completed normally. I couldn't reproduce or explain it.
-- **A stray "RetroHub Dev Check" instance:** it has been running since 10:15 this morning, started without test arguments (not by a check run). `dev-ui-check.sh` refuses to start while it runs.
+- **`build.sh` stalled: explained after the shift.**
+  - **Cause:** the working copy came from a ZIP that Chrome downloaded, so macOS marked its files as downloaded (`com.apple.quarantine`, agent "Chrome"). Running a marked script directly (`./build.sh`) makes macOS ask "build.sh cannot be opened because the developer cannot be verified". The script then waits, without output, until someone answers.
+  - **Evidence:** the system log shows `Prompt shown … waiting for response` at 12:43:12 for build.sh's file ID, and a denial when the prompt was closed at 14:27. The runs that finished used `bash build.sh`, which reads the script as a file and skips that check.
+  - **Fix:** build from a `git clone`. Git doesn't mark files, and there `./build.sh` runs normally. The quarantine wasn't removed and Gatekeeper wasn't changed. See `AGENTS.md`.
+- **A stray "RetroHub Dev Check" instance:** it has been running since 10:15 this morning, opened by macOS (Dock, Finder or `open`) without test arguments, while no check run or agent was working. `dev-ui-check.sh` refuses to start while it runs.
 
 ## 9. Unresolved
 
@@ -502,7 +506,7 @@ Two oddities:
    - **Removed this shift:**
      - the throwaway "RetroHub Probe" app and its settings;
      - a `RetroHub` settings domain (window sizes only), left by running the raw debug binary as an app during the UI-fix shift.
-6. **Repository confirmation:** confirm `jbutler0831/RetroHub` is the authorized repository, and whether J-Star has write access.
+6. **Repository:** confirmed as `jbutler0831/RetroHub`, base `main`, with push access for J-Star's account. The push itself still waits for J-Star's go-ahead.
 
 ## 10. Recommended next shift
 
@@ -519,3 +523,16 @@ Two oddities:
    - turn on branch protection;
    - add the CI workflow.
 6. After that: music, which was deferred since Shift 01.
+
+## 11. Follow-up (after the shift)
+
+- **`build.sh` security prompt explained:** the ZIP copy's quarantine, not the script or the toolchain (§8). From now on, builds and tests run in the clone. The ZIP copy is kept as it is, as a backup, and gets no more commits.
+- **Launcher checked from the clone:**
+  - `mac/scripts/dev-run.sh --controller-diagnostics` builds RetroHub Dev and opens it with Controller Diagnostics. The log starts with `device recording started (io.github.jbutler0831.retrohub.dev)`.
+  - The test games folder is now the clone's `.devdata/Games`.
+  - Nothing outside RetroHub Dev's own settings was changed.
+- **Fixed: Controller Diagnostics times:**
+  - **Bug:** the times used the 12-hour clock without AM/PM, so a press at 8:12 PM was logged as `08:12`, and midnight as `12:00`.
+  - **Fix:** they're now always 24-hour, matching the log's file name and notes taken during a test.
+  - **Regression test:** 4 checks in a new `controller diagnostics` self-test section (188 in all).
+- **Not changed:** hardware and gameplay results stay **unverified** until J-Star reports them.
