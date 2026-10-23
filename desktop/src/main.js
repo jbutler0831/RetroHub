@@ -27,7 +27,10 @@ let settings = {
   lastPlayed: {},
   emulatorPaths: {},
   graphics: { ...graphicsOptions.DEFAULTS },
+  // 'system' (follow the OS), 'light' or 'dark': RetroHub's window only, never the OS setting.
+  appearance: 'system',
 };
+const APPEARANCES = ['system', 'light', 'dark'];
 
 function loadSettings() {
   try {
@@ -72,6 +75,7 @@ function state() {
     lastPlayed: settings.lastPlayed,
     recentLimit: RECENT_LIMIT,
     graphics: settings.graphics,
+    appearance: settings.appearance,
     shadersMissing: graphicsOptions.shadersMissing(resolve(EMULATORS.find((e) => e.id === 'retroarch'), settings.emulatorPaths),
                                                    settings.graphics),
   };
@@ -116,6 +120,15 @@ ipcMain.handle('setGraphics', (_, changes) => {
   const next = { ...settings.graphics, ...changes };
   if (['off', 'crt', 'smooth'].includes(next.filter) && [1, 2, 3, 4].includes(next.scale)) {
     settings.graphics = { filter: next.filter, scale: next.scale, widescreen: !!next.widescreen };
+    saveSettings();
+  }
+  return state();
+});
+
+ipcMain.handle('setAppearance', (_, appearance) => {
+  if (APPEARANCES.includes(appearance)) {
+    settings.appearance = appearance;
+    nativeTheme.themeSource = appearance;
     saveSettings();
   }
   return state();
@@ -212,6 +225,8 @@ if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
 
 app.whenReady().then(() => {
   loadSettings();
+  // Before the window is created, so it opens in the chosen appearance without a flash.
+  nativeTheme.themeSource = APPEARANCES.includes(settings.appearance) ? settings.appearance : 'system';
   rescan();
   createWindow();
 });

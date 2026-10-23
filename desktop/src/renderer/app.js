@@ -302,6 +302,14 @@ function renderSetup() {
         </div>
       </section>
       <section>
+        <h3>Appearance</h3>
+        <p class="subtitle">For RetroHub only: your computer's own setting stays as it is. Couch mode always has its dark TV look.</p>
+        <div class="panel row-panel">
+          <div class="segmented">${[['system', 'Follow System'], ['light', 'Light'], ['dark', 'Dark']].map(([value, label]) =>
+            `<button class="${S.appearance === value ? 'active' : ''}" data-appearance="${value}">${label}</button>`).join('')}</div>
+        </div>
+      </section>
+      <section>
         <h3>Controller</h3>
         <p class="subtitle">PS5 DualSense and Xbox controllers work over Bluetooth or USB.</p>
         <div class="panel row-panel">
@@ -479,7 +487,7 @@ nav.addEventListener('click', (event) => {
 });
 
 async function handleButtons(event) {
-  const target = event.target.closest('[data-download], [data-open-folder], [data-choose-root], [data-locate], [data-play], [data-exit], [data-tab], [data-graphics]');
+  const target = event.target.closest('[data-download], [data-open-folder], [data-choose-root], [data-locate], [data-play], [data-exit], [data-tab], [data-graphics], [data-appearance]');
   if (!target) return false;
   const d = target.dataset;
   if ('download' in d) api.openDownload(d.download);
@@ -490,6 +498,7 @@ async function handleButtons(event) {
   else if ('exit' in d) setCouch(false);
   else if ('tab' in d) { selection = d.tab; couchIndex = 0; render(); }
   else if ('graphics' in d) applyState(await api.setGraphics({ [d.graphics]: JSON.parse(d.value) }));
+  else if ('appearance' in d) applyState(await api.setAppearance(d.appearance));
   return true;
 }
 
