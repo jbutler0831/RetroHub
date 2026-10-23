@@ -2,7 +2,8 @@
 // the emulator's process ends, with its exit status, also when it fails straight away.
 const test = require('node:test');
 const assert = require('node:assert');
-const { startProcess } = require('../src/emulators');
+const { startProcess, retroArchWindowArgs } = require('../src/emulators');
+const graphics = require('../src/graphics');
 
 // Emulators are started detached and unreferenced, so they don't hold RetroHub open. In the app,
 // Electron keeps running and hears the exit; here a timer keeps Node running until it does.
@@ -27,4 +28,10 @@ test('an emulator that fails straight away still reports its end', async () => {
 
 test('a missing emulator is an error, not a silent failure', async () => {
   await assert.rejects(startProcess('/nonexistent/emulator', []));
+});
+
+test('RetroArch games start full screen unless turned off', () => {
+  assert.strictEqual(graphics.DEFAULTS.fullscreen, true, 'on by default');
+  assert.deepStrictEqual(retroArchWindowArgs(true), ['-f']);
+  assert.deepStrictEqual(retroArchWindowArgs(false), [], 'or in a window, as RetroArch is set');
 });

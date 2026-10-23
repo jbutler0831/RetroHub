@@ -311,6 +311,8 @@ function renderSetup() {
         <h3>Graphics</h3>
         <p class="subtitle">Applied when RetroHub starts a game in RetroArch. RetroArch's own settings stay as they are.</p>
         <div class="panel graphics-panel">
+          ${graphicsRow('Full screen', 'Games start full screen in RetroArch. Press F in RetroArch to switch between full screen and a window.',
+                        segmented('fullscreen', [[true, 'On'], [false, 'Off']]))}
           ${graphicsRow('Screen filter', '2D systems such as NES, SNES, Genesis, Game Boy and arcade. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.',
                         segmented('filter', [['off', 'Off'], ['crt', 'CRT'], ['smooth', 'Smooth HD']]))}
           ${S.shadersMissing ? `<div class="graphics-warning">Download RetroArch's shaders first: Main Menu › Online Updater › Update Slang Shaders.</div>` : ''}

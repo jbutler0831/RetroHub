@@ -108,6 +108,11 @@ function startProcess(command, args) {
   });
 }
 
+/** Full screen or in a window, for this run only (RetroArch's own setting is left alone). */
+function retroArchWindowArgs(fullscreen) {
+  return fullscreen ? ['-f'] : [];
+}
+
 /**
  * The first installed way to play a system: { label, start(gamePath) } or null. start resolves
  * with the emulator's process, or null for OpenEmu, which macOS opens and which stays open as a
@@ -124,7 +129,7 @@ function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS, { fullsc
         if (corePath) {
           return {
             label: `RetroArch (${core.name})`,
-            start: (game) => startProcess(retroarch.command, [...retroarch.prefix, ...(fullscreen ? ['-f'] : []), '-L', corePath,
+            start: (game) => startProcess(retroarch.command, [...retroarch.prefix, ...retroArchWindowArgs(fullscreen), '-L', corePath,
               ...graphicsOptions.retroArchArgs(system.id, core, retroarch, graphics), game]),
           };
         }
@@ -182,4 +187,4 @@ async function launch(game, customPaths, graphics, options) {
   }
 }
 
-module.exports = { availableEmulators, resolve, readiness, launch, startProcess };
+module.exports = { availableEmulators, resolve, readiness, launch, startProcess, retroArchWindowArgs };

@@ -225,7 +225,9 @@ async function play(id) {
   // RetroHub, mustn't start a second copy.
   if (session) return { error: `${session.label} is still running ${session.game.displayTitle}. Close it to start another game.` };
   try {
-    const started = await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen: consoleMode });
+    // Console mode (a device that boots into RetroHub) always plays full screen.
+    const fullscreen = consoleMode || settings.graphics.fullscreen !== false;
+    const started = await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen });
     if (started.process && started.process.exitCode === null) {
       session = { game, label: started.label, process: started.process };
       started.process.once('exit', () => gameEnded(started.process));
@@ -266,7 +268,7 @@ ipcMain.handle('libraryAction', (_, action, details = {}) => {
 ipcMain.handle('setGraphics', (_, changes) => {
   const next = { ...settings.graphics, ...changes };
   if (['off', 'crt', 'smooth'].includes(next.filter) && [1, 2, 3, 4].includes(next.scale)) {
-    settings.graphics = { filter: next.filter, scale: next.scale, widescreen: !!next.widescreen };
+    settings.graphics = { filter: next.filter, scale: next.scale, widescreen: !!next.widescreen, fullscreen: next.fullscreen !== false };
     saveSettings();
   }
   return state();
