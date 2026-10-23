@@ -1,5 +1,7 @@
-// One game at a time, with a stand-in emulator (a script that runs 3 seconds) set as Dolphin.
-// Not on Windows, where an emulator has to be a .exe program.
+// One game at a time, with a stand-in emulator set as Dolphin: a script that runs 3 seconds, or on
+// Windows, where an emulator has to be a program, RETROHUB_STAND_IN (test/release/StandIn), which
+// does the same next to itself.
+const standIn = process.platform === 'win32' && process.env.RETROHUB_STAND_IN;
 const fs = require('fs');
 const path = require('path');
 
@@ -9,9 +11,14 @@ const startsIn = (dataDir) => {
 };
 
 module.exports = {
-  platforms: ['darwin', 'linux'],
+  ...(standIn ? {} : { platforms: ['darwin', 'linux'] }),
   skipReason: 'the stand-in emulator is a shell script; the unit tests cover starting and ending a process here',
   settings(dataDir) {
+    if (standIn) {
+      const emulator = path.join(dataDir, 'emulator.exe');
+      fs.copyFileSync(standIn, emulator);
+      return { emulatorPaths: { dolphin: emulator } };
+    }
     const emulator = path.join(dataDir, 'emulator.sh');
     fs.writeFileSync(emulator, `#!/bin/sh\necho "start $*" >> "${path.join(dataDir, 'emulator.log')}"\nsleep 3\n`, { mode: 0o755 });
     return { emulatorPaths: { dolphin: emulator } };

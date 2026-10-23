@@ -1,0 +1,218 @@
+# Checks a published release the way a tester gets it, on fresh machines with no RetroHub settings
+# and no emulators:
+# - each download matches the checksum GitHub recorded when it was uploaded;
+# - the installed or unpacked app passes the window checks (desktop/test/window), including starting
+#   a game with a stand-in emulator;
+# - upgrading from the previous release keeps the favorites, settings and games folder.
+# The Mac app can't be driven from outside, so on macOS it checks that the app opens, scans the
+# test library, and keeps 1.6's settings. Runs when a branch named <name>/release-check is pushed,
+# or by hand with a release to check.
+name: Release check
+
+on:
+  push:
+    branches: ['*/release-check']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to check
+        required: true
+      previous:
+        description: Release to upgrade from
+        required: true
+        default: v1.6
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag || 'v1.7-preview.1' }}
+  PREVIOUS: ${{ inputs.previous || 'v1.6' }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # For the window checks' runner; the app checked is the downloaded one.
+      - run: npm ci
+
+      - name: Download and verify
+        run: |
+          get() { # tag pattern folder
+            gh release download "$1" -R "$GITHUB_REPOSITORY" -p "$2" -D "$3" --clobber
+            for file in "$3"/$2; do
+              want=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$1" -q ".assets[] | select(.name == \"$(basename "$file")\") | .digest" | sed 's/^sha256://')
+              got=$(sha256sum "$file" | cut -d' ' -f1)
+              if [ -z "$want" ]; then echo "no checksum published: $(basename "$file")"
+              elif [ "$want" = "$got" ]; then echo "checksum OK: $(basename "$file")"
+              else echo "CHECKSUM MISMATCH: $(basename "$file")"; exit 1; fi
+            done
+          }
+          if [ "$RUNNER_OS" = Windows ]; then
+            get "$TAG" 'RetroHub-Setup-*.exe' "$RUNNER_TEMP/new"
+            get "$TAG" 'RetroHub-Portable-*.exe' "$RUNNER_TEMP/new"
+            get "$PREVIOUS" 'RetroHub-Setup-*.exe' "$RUNNER_TEMP/old"
+          else
+            get "$TAG" "RetroHub-*-${{ matrix.arch }}.AppImage" "$RUNNER_TEMP/new"
+            get "$PREVIOUS" "RetroHub-*-${{ matrix.arch }}.AppImage" "$RUNNER_TEMP/old"
+          fi
+
+      - name: Libraries for the window (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0t64 libnss3 libasound2t64 libgbm1
+
+      # AppImages are unpacked, as GitHub's machines have no FUSE to mount them.
+      - name: Unpack (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          for v in old new; do
+            (cd "$RUNNER_TEMP/$v" && chmod +x ./*.AppImage && ./*.AppImage --appimage-extract > /dev/null)
+            echo "${v^^}_APP=$RUNNER_TEMP/$v/squashfs-root/AppRun" >> "$GITHUB_ENV"
+          done
+
+      - name: Stand-in emulator (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          dotnet publish test/release/StandIn -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o "$RUNNER_TEMP/standin"
+          echo "RETROHUB_STAND_IN=$(cygpath -w "$RUNNER_TEMP/standin/StandIn.exe")" >> "$GITHUB_ENV"
+
+      - name: Upgrade, part 1 (the previous release)
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            powershell -Command "Start-Process -FilePath (Get-Item '$RUNNER_TEMP/old/RetroHub-Setup-*.exe').FullName -ArgumentList '/S' -Wait"
+            app=$(cygpath -w "$(find "$(cygpath -u "$LOCALAPPDATA")/Programs" "$(cygpath -u "$PROGRAMFILES")" -maxdepth 3 -iname RetroHub.exe 2>/dev/null | head -1)")
+            echo "installed: $app"
+            echo "INSTALLED_APP=$app" >> "$GITHUB_ENV"
+            node test/release/upgrade.js before "$app"
+          else
+            xvfb-run -a node test/release/upgrade.js before "$OLD_APP"
+          fi
+
+      - name: Upgrade, part 2 (this release, on the same settings)
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            powershell -Command "Start-Process -FilePath (Get-Item '$RUNNER_TEMP/new/RetroHub-Setup-*.exe').FullName -ArgumentList '/S' -Wait"
+            app=$(cygpath -w "$(find "$(cygpath -u "$LOCALAPPDATA")/Programs" "$(cygpath -u "$PROGRAMFILES")" -maxdepth 3 -iname RetroHub.exe 2>/dev/null | head -1)")
+            [ "$app" = "$INSTALLED_APP" ] && echo "installed over the previous version: $app" || echo "installed: $app (the previous one was $INSTALLED_APP)"
+            echo "NEW_APP=$app" >> "$GITHUB_ENV"
+            node test/release/upgrade.js after "$app"
+          else
+            xvfb-run -a node test/release/upgrade.js after "$NEW_APP"
+          fi
+
+      - name: Window checks on the installed app
+        run: |
+          groups="sidebar appearance keyboard library-check small-screens controller accessibility session"
+          if [ "$RUNNER_OS" = Windows ]; then
+            RETROHUB_APP="$NEW_APP" node test/window/run.js $groups
+          else
+            RETROHUB_APP="$NEW_APP" xvfb-run -a node test/window/run.js $groups
+          fi
+
+      - name: The portable version opens (Windows)
+        if: runner.os == 'Windows'
+        run: RETROHUB_APP="$(cygpath -w "$(ls "$(cygpath -u "$RUNNER_TEMP")"/new/RetroHub-Portable-*.exe)")" node test/window/run.js sidebar
+
+      - name: Pictures of each step
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-check-${{ matrix.os }}
+          path: desktop/dist/window-checks
+          if-no-files-found: ignore
+
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Apple silicon and Intel: the two halves of the universal app.
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and verify
+        run: |
+          get() { # tag file folder
+            mkdir -p "$3"
+            gh release download "$1" -R "$GITHUB_REPOSITORY" -p "$2" -D "$3" --clobber
+            want=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$1" -q ".assets[] | select(.name == \"$2\") | .digest" | sed 's/^sha256://')
+            got=$(shasum -a 256 "$3/$2" | cut -d' ' -f1)
+            if [ -z "$want" ]; then echo "no checksum published: $2"
+            elif [ "$want" = "$got" ]; then echo "checksum OK: $2"
+            else echo "CHECKSUM MISMATCH: $2"; exit 1; fi
+          }
+          dmg=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name | select(endswith(".dmg"))')
+          get "$TAG" "$dmg" "$RUNNER_TEMP/new"
+          get "$TAG" RetroHub.zip "$RUNNER_TEMP/new"
+          get "$PREVIOUS" RetroHub.zip "$RUNNER_TEMP/old"
+          echo "DMG=$RUNNER_TEMP/new/$dmg" >> "$GITHUB_ENV"
+
+      - name: The downloads
+        run: |
+          mount=$(hdiutil attach -nobrowse -readonly "$DMG" | tail -1 | cut -f3)
+          ditto "$mount/RetroHub.app" "$RUNNER_TEMP/new/dmg/RetroHub.app"
+          hdiutil detach -quiet "$mount"
+          ditto -x -k "$RUNNER_TEMP/new/RetroHub.zip" "$RUNNER_TEMP/new/zip"
+          ditto -x -k "$RUNNER_TEMP/old/RetroHub.zip" "$RUNNER_TEMP/old"
+          for app in "$RUNNER_TEMP/new/dmg/RetroHub.app" "$RUNNER_TEMP/new/zip/RetroHub.app"; do
+            codesign --verify --strict "$app"
+            echo "$app: $(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist"), $(lipo -archs "$app/Contents/MacOS/RetroHub")"
+          done
+
+      - name: Upgrade from the previous release
+        run: |
+          id=io.github.jbutler0831.retrohub
+          favorite="$HOME/Games/NES/Legend of Placeholder, The (USA) [!].nes"
+          node -e "require('./desktop/test/window/library').makeLibrary(process.env.HOME + '/Games')"
+          open_for() { # app seconds: opens it, checks it's still running after the given time, quits it
+            open "$1"
+            sleep "$2"
+            pgrep -f "$1/Contents/MacOS/RetroHub" > /dev/null || { echo "FAIL: $1 isn't running"; ls ~/Library/Logs/DiagnosticReports | grep -i retrohub; exit 1; }
+            pkill -TERM -f "$1/Contents/MacOS/RetroHub"; sleep 2
+          }
+          mkdir -p ~/Applications
+          ditto "$RUNNER_TEMP/old/RetroHub.app" ~/Applications/RetroHub.app
+          echo "previous: $(plutil -extract CFBundleShortVersionString raw ~/Applications/RetroHub.app/Contents/Info.plist)"
+          # A 1.6 user's settings: a favorite and a game played.
+          defaults write $id favorites -array "$favorite"
+          defaults write $id lastPlayed -dict "$favorite" -date "2026-10-20 12:00:00 +0000"
+          open_for ~/Applications/RetroHub.app 8
+          rm -rf ~/Applications/RetroHub.app
+          ditto "$RUNNER_TEMP/new/dmg/RetroHub.app" ~/Applications/RetroHub.app
+          echo "upgraded to: $(plutil -extract CFBundleShortVersionString raw ~/Applications/RetroHub.app/Contents/Info.plist)"
+          open_for ~/Applications/RetroHub.app 10
+          defaults read $id favorites | grep -q "Legend of Placeholder" && echo "ok the favorite is kept" || { echo "FAIL the favorite is gone"; exit 1; }
+          defaults read $id lastPlayed | grep -q "Legend of Placeholder" && echo "ok the play history is kept" || { echo "FAIL the play history is gone"; exit 1; }
+          python3 - <<'EOF'
+          import json, os, sys
+          state = json.load(open(os.path.expanduser('~/Library/Application Support/RetroHub/library.json')))
+          index = state.get('index') or {}
+          names = sorted(os.path.basename(p) for p, e in index.items() if not e.get('missingSince'))
+          print('library scanned:', ', '.join(names))
+          ok = len(names) == 6 and state.get('reviewedAt', 0) > 0 and not any(e.get('missingSince') for e in index.values())
+          print('ok the test library (6 games) is scanned, as a quiet baseline' if ok else 'FAIL the scan is not as expected')
+          sys.exit(0 if ok else 1)
+          EOF

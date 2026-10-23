@@ -4,8 +4,11 @@
 // checks the result. A picture of each step goes to dist/window-checks. They mirror the Mac app's
 // UIChecks.swift.
 //
-//   npm run test:window            every group
-//   npm run test:window keyboard   one group
+//   npm run test:window                    every group
+//   npm run test:window keyboard sidebar   some groups
+//
+// RETROHUB_APP=<program> checks an installed or packaged RetroHub instead of this source, such as a
+// downloaded release (.github/workflows/release-check.yml does that on fresh machines).
 //
 // Exits non-zero if a check fails. Checks that need hardware or a person (a real controller, an
 // emulator showing a game, a screen reader speaking) aren't here; see the pull request notes.
@@ -18,10 +21,19 @@ const { makeLibrary } = require('./library');
 
 const desktop = path.join(__dirname, '../..');
 const pictures = path.join(desktop, 'dist/window-checks');
-const only = process.argv[2];
+const only = process.argv.slice(2);
 const groups = fs.readdirSync(path.join(__dirname, 'steps')).filter((f) => f.endsWith('.js'))
   .map((f) => ({ name: f.slice(0, -3), ...require(`./steps/${f}`) }))
-  .filter((g) => !only || g.name === only);
+  .filter((g) => !only.length || only.includes(g.name));
+/** The program and its first arguments: this source in Electron, or an installed RetroHub. */
+const appCommand = process.env.RETROHUB_APP ? [process.env.RETROHUB_APP] : [electron, desktop];
+// GitHub's Linux machines don't allow Chromium's sandbox; the app itself is unchanged.
+const sandbox = process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : [];
+
+/** Starts RetroHub with a debugging port on localhost, and these arguments. */
+function startApp(port, ...args) {
+  return spawn(appCommand[0], [...appCommand.slice(1), ...args, `--remote-debugging-port=${port}`, ...sandbox], { stdio: 'ignore' });
+}
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -97,9 +109,7 @@ function helpers(send, group, results) {
 
 /** Opens RetroHub on dataDir, runs one phase of a group's steps, and quits it. */
 async function runPhase(phase, group, port, dataDir, results) {
-  // GitHub's Linux machines don't allow Chromium's sandbox; the app itself is unchanged.
-  const sandbox = process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : [];
-  const app = spawn(electron, [desktop, `--data-dir=${dataDir}`, `--remote-debugging-port=${port}`, ...sandbox], { stdio: 'ignore' });
+  const app = startApp(port, `--data-dir=${dataDir}`);
   let ws;
   try {
     const connection = await connect(port);
@@ -141,6 +151,9 @@ async function runGroup(group, port, results) {
     fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }
+
+module.exports = { connect, helpers, startApp, wait };
+if (require.main !== module) return;
 
 (async () => {
   fs.rmSync(pictures, { recursive: true, force: true });
