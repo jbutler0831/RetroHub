@@ -104,11 +104,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $setup = Get-Item "$env:RUNNER_TEMP\old\RetroHub-Setup-*.exe"
-          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
-          $app = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse -Depth 3 -Filter RetroHub.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $app) { Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 40 FullName; throw 'RetroHub.exe not found after installing' }
-          "installed: $($app.FullName)"
+          . "$env:GITHUB_WORKSPACE\desktop\test\release\install.ps1"
+          $app = Install-RetroHub "$env:RUNNER_TEMP\old"
+          "installed: $($app.FullName), version $($app.VersionInfo.ProductVersion)"
           "OLD_APP=$($app.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Upgrade, part 1 (the previous release)
@@ -120,10 +118,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $setup = Get-Item "$env:RUNNER_TEMP\new\RetroHub-Setup-*.exe"
-          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
-          $app = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse -Depth 3 -Filter RetroHub.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $app) { throw 'RetroHub.exe not found after installing' }
+          . "$env:GITHUB_WORKSPACE\desktop\test\release\install.ps1"
+          $app = Install-RetroHub "$env:RUNNER_TEMP\new" -Version (Get-Content "$env:GITHUB_WORKSPACE\desktop\package.json" | ConvertFrom-Json).version
           if ($app.FullName -eq $env:OLD_APP) { "installed over the previous version: $($app.FullName)" } else { "installed: $($app.FullName) (the previous one was $env:OLD_APP)" }
           "version: $($app.VersionInfo.ProductVersion)"
           "NEW_APP=$($app.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
