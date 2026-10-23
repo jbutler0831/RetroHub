@@ -359,6 +359,11 @@ enum Launcher {
         let missing: Emulator?
     }
 
+    /// The emulator that plays a system here, as RetroHub names it: "RetroArch (Mesen)".
+    static func label(for system: GameSystem) -> String? {
+        plan(for: system)?.label
+    }
+
     static func readiness(for system: GameSystem) -> Readiness {
         if let plan = plan(for: system) {
             return Readiness(ready: true, summary: "Plays with \(plan.label)", detail: system.setupNote, missing: nil)

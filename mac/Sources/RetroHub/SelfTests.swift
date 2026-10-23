@@ -25,7 +25,7 @@ enum SelfTests {
         for (name, section) in [("titles", titles), ("PARAM.SFO", { sfo(in: tmp.appending(path: "sfo")) }),
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
                                 ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
-                                ("cover art", coverArt), ("old settings", legacySettings),
+                                ("cover art", coverArt), ("old settings", legacySettings), ("library scanner", scanner), ("play time", playtime),
                                 ("appearance", appearance), ("game process", gameProcess),
                                 ("controller diagnostics", controllerDiagnostics), ("compatibility", compatibility)] {
             print("- \(name)")
@@ -177,6 +177,8 @@ enum SelfTests {
                "N64 3x rounds the ParaLLEl-RDP factor down to a power of two")
         expect(RetroArchGraphics.coreOptions("swanstation", scale: 1, widescreen: false), [:], "native, no hacks")
         expect(RetroArchGraphics.coreOptions("snes9x", scale: 4, widescreen: true), [:], "2D cores get no 3D options")
+        expect(RetroArchGraphics.windowArguments(fullscreen: true), ["--fullscreen"], "games start full screen")
+        expect(RetroArchGraphics.windowArguments(fullscreen: false), [], "or in a window, as RetroArch is set")
     }
 
     private static func coverArt() {
@@ -188,6 +190,95 @@ enum SelfTests {
             expect(CoverArt.result(status: status, data: Data()), .offline, "\(status) is retried later")
         }
         expect(CoverArt.result(status: nil, data: Data()), .offline, "no HTTP status is retried later")
+    }
+
+    /// Play time (Playtime.swift), the same cases as desktop/test/playtime.test.js.
+    private static func playtime() {
+        let once = Playtime.adding([:], "/g/a.nes", seconds: 125.4)
+        expect(once, ["/g/a.nes": Playtime(seconds: 125, sessions: 1)], "a session adds its time and counts once")
+        expect(Playtime.adding(once, "/g/a.nes", seconds: 60), ["/g/a.nes": Playtime(seconds: 185, sessions: 2)], "and the next adds to it")
+        expect(Playtime.adding([:], "/g/a.nes", seconds: 9.9), [:], "a session under 10 seconds doesn't count")
+        let before = ["/g/a.nes": Playtime(seconds: 100, sessions: 2), "/g/b.nes": Playtime(seconds: 50, sessions: 1)]
+        expect(Playtime.moving(before, from: "/g/a.nes", to: "/g/b.nes"), ["/g/b.nes": Playtime(seconds: 150, sessions: 3)],
+               "a renamed game takes its play time along")
+        expect(Playtime.moving(before, from: "/g/none.nes", to: "/g/b.nes"), before, "nothing to move")
+        expect(Playtime.total(before), 150, "the total")
+        for (seconds, text) in [(59, "under a minute"), (60, "1 min"), (59 * 60, "59 min"), (3600, "1 h"),
+                                (3 * 3600 + 12 * 60 + 30, "3 h 12 min"), (40 * 3600 + 25 * 60, "40 h")] {
+            expect(Playtime.format(seconds), text, "\(seconds) seconds")
+        }
+    }
+
+    /// The Smart Game Scanner's rules (Scanner.swift), the same cases as desktop/test/scanner.test.js.
+    private static func scanner() {
+        typealias Entry = Scanner.Entry
+        func game(_ system: GameSystem, _ path: String) -> Game {
+            Game(system: system, title: URL(filePath: path).deletingPathExtension().lastPathComponent, bootURL: URL(filePath: path), localCovers: [])
+        }
+        func stats(_ files: [String: Scanner.FileInfo]) -> (String) -> Scanner.FileInfo? { { files[$0] } }
+        let info = Scanner.FileInfo(size: 10, mtime: 1)
+
+        let baseline = Scanner.updateIndex(nil, games: [game(.nes, "/g/NES/Contra.nes")], now: 100, stat: stats(["/g/NES/Contra.nes": info]))
+        expect(Scanner.summarize(baseline, reviewedAt: 100), Scanner.Summary(), "the first scan is the baseline: nothing is new")
+
+        let both = ["/g/NES/Contra.nes": info, "/g/NES/Zelda.nes": Scanner.FileInfo(size: 20, mtime: 1)]
+        let second = Scanner.updateIndex(baseline, games: [game(.nes, "/g/NES/Contra.nes"), game(.nes, "/g/NES/Zelda.nes")], now: 200, stat: stats(both))
+        expect(Scanner.summarize(second, reviewedAt: 100).added.map(\.path), ["/g/NES/Zelda.nes"], "a game added later is new")
+        expect(Scanner.summarize(second, reviewedAt: 200).added, [], "until the changes are reviewed")
+
+        let gone = Scanner.updateIndex(baseline, games: [], now: 200, stat: stats([:]))
+        expect(gone["/g/NES/Contra.nes"]?.missingSince, 200, "a missing game is kept, flagged")
+        expect(Scanner.summarize(gone, reviewedAt: 100).missing,
+               [Scanner.Missing(path: "/g/NES/Contra.nes", system: "nes", title: "Contra", since: 200)], "and listed as missing")
+        expect(Scanner.updateIndex(gone, games: [], now: 300, stat: stats([:]))["/g/NES/Contra.nes"]?.missingSince, 200,
+               "still missing since it first went missing")
+
+        let renamed = Scanner.updateIndex(baseline, games: [game(.nes, "/g/NES/Contra (USA).nes")], now: 200,
+                                          stat: stats(["/g/NES/Contra (USA).nes": Scanner.FileInfo(size: 10, mtime: 5)]))
+        let renames = Scanner.summarize(renamed, reviewedAt: 100)
+        expect(renames.renamed.map { [$0.from, $0.to] }, [["/g/NES/Contra.nes", "/g/NES/Contra (USA).nes"]], "a renamed game is matched by system, size and type")
+        expect(renames.missing, [], "and isn't also missing")
+        expect(renames.added, [], "nor new")
+
+        let gone200 = Entry(system: "nes", title: "A", size: 10, mtime: 1, firstSeen: 0, fp: "aaa", missingSince: 200)
+        let other = Entry(system: "nes", title: "B", size: 10, mtime: 5, firstSeen: 200, fp: "bbb")
+        expect(Scanner.summarize(["/g/NES/A.nes": gone200, "/g/NES/B.nes": other]).renamed, [], "a different fingerprint is a different game")
+        var same = other
+        same.fp = "aaa"
+        expect(Scanner.summarize(["/g/NES/A.nes": gone200, "/g/NES/B.nes": same]).renamed.count, 1, "the same fingerprint is a rename")
+
+        var unknown = gone200
+        unknown.fp = nil
+        let fresh = Entry(system: "nes", title: "B", size: 10, mtime: 5, firstSeen: 200)
+        expect(Scanner.summarize(["/g/NES/A.nes": unknown, "/g/NES/B.nes": fresh, "/g/NES/C.nes": fresh]).renamed, [],
+               "no rename when it could be either of two files")
+        var snes = fresh
+        snes.system = "snes"
+        expect(Scanner.summarize(["/g/NES/A.nes": unknown, "/g/SNES/A.sfc": snes]).renamed, [], "or another system")
+        var already = fresh
+        already.firstSeen = 0
+        expect(Scanner.summarize(["/g/NES/A.nes": unknown, "/g/NES/B.nes": already]).renamed, [], "or a file that was already there")
+        var notSame = unknown
+        notSame.notRenamed = true
+        let kept = Scanner.summarize(["/g/NES/A.nes": notSame, "/g/NES/B.nes": fresh], reviewedAt: 100)
+        expect(kept.renamed, [], "\"not the same game\" isn't a rename")
+        expect(kept.missing.map(\.path), ["/g/NES/A.nes"], "and stays missing")
+
+        let copies: Scanner.Index = [
+            "/g/NES/A.nes": Entry(system: "nes", title: "A", size: 10, firstSeen: 0, fp: "x"),
+            "/g/NES/Copy of A.nes": Entry(system: "nes", title: "Copy of A", size: 10, firstSeen: 0, fp: "x"),
+            "/g/NES/B.nes": Entry(system: "nes", title: "B", size: 10, firstSeen: 0, fp: "y"),
+        ]
+        expect(Scanner.summarize(copies).duplicates, [Scanner.Duplicate(system: "nes", title: "A", paths: ["/g/NES/A.nes", "/g/NES/Copy of A.nes"])],
+               "duplicates: the same fingerprint at two paths of one system")
+
+        let printed: Scanner.Index = ["/g/NES/A.nes": Entry(system: "nes", title: "A", size: 10, mtime: 1, firstSeen: 0, fp: "x")]
+        let unchanged = Scanner.updateIndex(printed, games: [game(.nes, "/g/NES/A.nes")], now: 200, stat: stats(["/g/NES/A.nes": info]))
+        expect(unchanged["/g/NES/A.nes"]?.fp, "x", "an unchanged file keeps its fingerprint")
+        expect(Scanner.needsFingerprint(unchanged), [], "and needs no new one")
+        let changed = Scanner.updateIndex(printed, games: [game(.nes, "/g/NES/A.nes")], now: 200,
+                                          stat: stats(["/g/NES/A.nes": Scanner.FileInfo(size: 11, mtime: 2)]))
+        expect(Scanner.needsFingerprint(changed), ["/g/NES/A.nes"], "a changed one is fingerprinted again")
     }
 
     /// Only the installed RetroHub takes over the settings saved under the old bundle ID; the
@@ -219,6 +310,14 @@ enum SelfTests {
         expect(game?.isRunning, false, "and the process has ended")
         expect((try? Launcher.start(URL(filePath: "/nonexistent/emulator"), []) { _ in }) == nil, true,
                "a missing emulator is an error, not a silent failure")
+        // The same cases as desktop/test/emulators.test.js.
+        expect(GameSession.ending(seconds: 2, status: 1, crashed: false), .failed, "exit code 1 at once is a failed start")
+        expect(GameSession.ending(seconds: 2, status: 11, crashed: true), .failed, "and so is a crash")
+        expect(GameSession.ending(seconds: 2, status: 0, crashed: false), .handedOff, "closed cleanly at once: handed to a copy already open")
+        expect(GameSession.ending(seconds: 600, status: 1, crashed: false), .played, "after ten minutes it was played, whatever the exit")
+        expect(GameSession.failedMessage(label: "RetroArch (Beetle Saturn)", status: 1, note: "Needs a Saturn BIOS dumped from your console."),
+               "RetroArch (Beetle Saturn) closed straight away (exit code 1). Open it on its own and load the game to see what it says. Needs a Saturn BIOS dumped from your console.",
+               "the message names the emulator and the BIOS note")
     }
 
     /// Controller Diagnostics times are compared with notes taken during a hardware test, so they

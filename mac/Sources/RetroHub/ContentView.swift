@@ -97,6 +97,8 @@ struct ContentView: View {
             switch navigator.selection {
             case .setup:
                 SetupView()
+            case .check:
+                LibraryCheckView()
             case let item?:
                 GameGridView(item: item, search: search, pickedGame: pickedGame(for: item), focus: $focus)
                     .id(item)
@@ -176,6 +178,7 @@ private struct SidebarRow: View {
     private func help(_ readiness: Launcher.Readiness?) -> String {
         switch item {
         case .setup: return "Emulators, games folder, graphics, controller and BIOS files"
+        case .check: return "New, moved, missing and duplicate games"
         case .favorites, .recent: return "\(item.title): \(gamesText)"
         case .system(let system):
             guard let readiness else { return "\(system.displayName): no games yet" }
@@ -274,7 +277,11 @@ private struct GameGridView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GridHeader(item: item, count: library.games(for: item).count, shown: search.isEmpty ? nil : games.count)
+            if !library.check.news.isEmpty {
+                LibraryBanner(news: library.check.news)
+            }
+            GridHeader(item: item, count: library.games(for: item).count, shown: search.isEmpty ? nil : games.count,
+                       playedInAll: item == .recent ? Playtime.total(library.playtime) : 0)
             if games.isEmpty {
                 emptyState
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -300,7 +307,7 @@ private struct GameGridView: View {
                               spacing: Self.spacing) {
                         ForEach(games) { game in
                             GameCard(game: game, isSelected: game.id == selectedID, isFocused: gridFocused,
-                                     isFavorite: library.isFavorite(game), showsSystem: !isSystemList,
+                                     isFavorite: library.isFavorite(game), showsSystem: !isSystemList, played: library.playtime(game),
                                      onPlay: { play(game) })
                                 .id(game.id)
                                 .onTapGesture(count: 2) { play(game) }
@@ -398,7 +405,7 @@ private struct GameGridView: View {
                                    message: "The games you play will show up here so you can jump right back in.")
             case .system(let system):
                 SystemEmptyState(system: system)
-            case .setup:
+            case .setup, .check:
                 EmptyView()
             }
         }
@@ -410,6 +417,8 @@ private struct GridHeader: View {
     let count: Int
     /// How many games match the search, while searching.
     let shown: Int?
+    /// On Recently Played: the time played across every game.
+    let playedInAll: Int
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
@@ -422,6 +431,9 @@ private struct GridHeader: View {
                         .foregroundStyle(.secondary)
                     if case .system(let system) = item {
                         SystemStatus(system: system)
+                    }
+                    if playedInAll >= 60 {
+                        Text("\(Playtime.format(playedInAll)) played in all").foregroundStyle(.secondary)
                     }
                 }
             }
@@ -550,6 +562,8 @@ private struct GameCard: View {
     let isFocused: Bool
     let isFavorite: Bool
     let showsSystem: Bool
+    /// Seconds played, shown from a minute up.
+    let played: Int
     let onPlay: () -> Void
     @State private var isHovering = false
 
@@ -594,8 +608,9 @@ private struct GameCard: View {
                     .font(.callout.weight(.medium))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
-                if showsSystem {
-                    Text(game.system.displayName)
+                let detail = [showsSystem ? game.system.displayName : nil, played >= 60 ? Playtime.format(played) : nil].compactMap { $0 }
+                if !detail.isEmpty {
+                    Text(detail.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

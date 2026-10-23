@@ -25,15 +25,65 @@ emulate anything itself; it finds your games and launches them in:
 Also: cover art, favorites, recently played, and a full-screen couch mode
 for controllers (press Menu/Options, or the TV button in the toolbar).
 
+## Features
+
+The Mac app and the Windows/Linux/Raspberry Pi app work the same way.
+
+- **Library Check.** RetroHub remembers the games it has found, and each time it scans (whenever you come back to it, or
+  with Rescan) it notices new, moved or renamed, missing and duplicate games. A banner says what changed, and Library
+  Check (also in Setup › Library) lists it all. Nothing changes until you choose:
+  - **Moved or renamed:** **Same game** moves its favorite and play history to the new name.
+  - **Missing:** games stay listed, with their favorites and history, until you remove them, so an unplugged drive
+    loses nothing.
+  - **New and duplicates:** listed, with **Show** to find each copy.
+  - **No cover art found:** **Look again** tries the cover server again.
+- **Setup warnings.** A system with games but no emulator shows an orange ⚠ count in the sidebar; hover it to see what's
+  needed.
+- **Appearance.** Follow System, Light or Dark, in Setup (and the Mac's View menu). It changes RetroHub only; couch mode
+  keeps its dark TV look.
+- **One game at a time.** Pressing Play while a game runs doesn't start a second copy: the Mac app brings the running
+  emulator forward, and the Windows/Linux app says which game is still running. RetroHub comes back to the front when
+  the game closes.
+- **Keyboard and controller.**
+
+  | | Keyboard (⌘ on a Mac, Ctrl elsewhere) | Controller |
+  |---|---|---|
+  | Move through the sidebar | ↑ ↓ | |
+  | Into the games, and back | Return or →, then Esc | |
+  | Move between games | Arrow keys | D-pad or left stick |
+  | Play | Return | A / ✕ |
+  | Favorite | F | Y / △ |
+  | Previous / next system | ⌘[ ⌘] | LB / RB (L1 / R1) |
+  | Search | ⌘F | |
+  | Setup | ⌘, | |
+  | Rescan | ⌘R | |
+  | Couch mode | | Menu / Options |
+  | Leave couch mode, close a message | Esc | B / ○ |
+
+  Each list remembers the game you picked, in the browser and in couch mode.
+- **Screen readers.** Sidebar rows read as, for example, "Sega Genesis, 1 game, setup needed". In the Windows/Linux app,
+  moving between games also announces each one.
+
 ## Downloads
 
 Get the latest version from the Releases page:
 
-- **Mac** (Apple silicon and Intel): `RetroHub.zip`
+- **Mac** (Apple silicon and Intel, macOS 14 or later): the `.dmg` (open it and drag RetroHub to Applications) or
+  `RetroHub.zip`
 - **Windows**: `RetroHub-Setup-<version>.exe` (installer) or `RetroHub-Portable-<version>.exe`
 - **Linux**: `RetroHub-<version>-x86_64.AppImage` (`chmod +x` it, then run)
 - **Raspberry Pi 4/5** (64-bit Raspberry Pi OS): `RetroHub-<version>-arm64.AppImage`. To build a console that
   boots into RetroHub, with a shutdown button and power LED, see [pi/README.md](pi/README.md).
+
+**The first time you open it.** RetroHub isn't signed by a known developer yet, so:
+- **macOS 15 (Sequoia) or later:**
+  1. Open RetroHub and click **Done** when macOS says it can't check it.
+  2. In **System Settings › Privacy & Security**, click **Open Anyway** next to "RetroHub was blocked", and confirm.
+- **macOS 14:** right-click RetroHub, choose **Open**, then **Open** again.
+- **Windows:** at "Windows protected your PC", click **More info**, then **Run anyway**.
+
+**Upgrading** keeps your favorites, recently played, play time and settings. The first scan after an upgrade just records
+the games you already have, so nothing shows up as new.
 
 On Windows and Linux, RetroHub looks for emulators in their usual install
 locations (including Scoop on Windows and Flatpak on Linux). If one isn't found,
@@ -50,7 +100,7 @@ use RetroArch on Windows and Linux.
 This builds `mac/build/RetroHub.app` and `mac/build/RetroHub.zip` (the file to upload to a
 release) and installs the app to `~/Applications`. By default the app is signed
 ad hoc: it runs on your Mac, but on other Macs Gatekeeper blocks it until the user
-right-clicks it and chooses **Open**. To build one that opens normally anywhere,
+allows it once (see "The first time you open it" above). To build one that opens normally anywhere,
 sign it with a Developer ID certificate and notarize it:
 
     xcrun notarytool store-credentials retrohub --apple-id <you@example.com> --team-id <TEAMID>
@@ -68,6 +118,30 @@ the Mac, Windows and Linux (x86_64 and Raspberry Pi) versions and attaches them 
 from CI is signed ad hoc, and the Windows build is unsigned, so Windows SmartScreen
 shows "Windows protected your PC" on first run (click **More info** → **Run anyway**).
 
+## Developing and checking
+
+Build from a `git clone`, not a downloaded ZIP: macOS marks downloaded files, and `build.sh` then waits on a security
+prompt. Development copies keep their own settings and use a test library in `.devdata/`, so `~/Games` and an
+installed RetroHub are never touched. Coding agents: see [AGENTS.md](AGENTS.md).
+
+**Mac app** (from `mac/`):
+
+    scripts/dev-run.sh                              # RetroHub Dev, on the test library
+    "$(swift build --show-bin-path)/RetroHub" --self-test
+    scripts/dev-ui-check.sh                         # window checks: needs the screen for about two minutes
+    scripts/dev-inventory.sh                        # what can play on this Mac (read-only)
+    INSTALL=0 ./build.sh                            # universal release build, without installing it
+
+**Windows/Linux/Raspberry Pi app** (from `desktop/`):
+
+    npm run dev            # a development copy
+    npm test               # tests
+    npm run test:window    # window checks: drive the real window (sidebar, keyboard, appearance, Library Check,
+                           # small screens, a simulated controller, screen reader names)
+
+Pull requests run the desktop checks on Windows, Linux and arm64 Linux (as on a Raspberry Pi). Anything that needs a
+person (a real controller, a game on screen, a screen reader speaking) stays unverified until someone tries it.
+
 ## Games folder
 
 Defaults to `~/Games` (change it from the toolbar). RetroHub creates one folder
@@ -84,3 +158,28 @@ files set in its settings; PS1 and PCSX2 need a console BIOS; RPCS3 needs the PS
 shadPS4 comes as a plain program rather than an installer. On a Mac, unzip it into
 `Applications/shadPS4/`; on Windows, into `C:\shadPS4\`; on Linux, put the AppImage
 on your PATH. Anywhere else works too: click **Locate…** in Setup (Windows and Linux).
+
+## Troubleshooting
+
+- **A game doesn't show up.** Check that it's in its system's folder (Setup › Games Folder › Open) with a file type that
+  system lists, then press Rescan (⌘R / Ctrl+R). An empty system shows which file types it expects.
+- **A system has an orange ⚠.** Nothing installed can play its games yet: hover it, or open it, to see which emulator or
+  RetroArch core to install.
+- **"… closed straight away".** The emulator started and quit at once, usually because of a missing BIOS file, core or
+  setting. Open the emulator on its own and load the game to see its own message. Setup › BIOS & Firmware lists the
+  files each system needs.
+- **The controller does nothing.** RetroHub only reads the controller while it's the app in front. Press a button once
+  after connecting it so it's recognised; its name then shows at the bottom of the sidebar.
+- **A game's favorite or play time is gone after renaming the file.** Open Library Check (the banner, or Setup ›
+  Library) and choose **Same game**: it moves them to the new name.
+- **The AppImage doesn't start (Linux, Raspberry Pi).** Install FUSE 2: `sudo apt install libfuse2t64` (Ubuntu 24.04,
+  Raspberry Pi OS Bookworm) or `sudo apt install libfuse2` (older).
+
+## Known issues
+
+- RetroHub isn't signed by a known developer, so macOS and Windows ask before opening it the first time.
+- OpenEmu (Mac): RetroHub can't tell when a game ends there, so it doesn't come back to the front or count play time.
+- Controllers have been tested with a simulated controller only so far; reports with real ones are welcome.
+
+Found a problem? [Open an issue](https://github.com/jbutler0831/RetroHub/issues/new) with your computer and system
+version, the RetroHub download, the emulator and game system, and what you expected.

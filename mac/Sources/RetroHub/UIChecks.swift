@@ -10,7 +10,11 @@ import AppKit
 /// window, menu shortcuts, simulated controller presses) and checks the result. A picture of the
 /// window is saved to the folder after each step (the app draws it itself, so no Screen Recording
 /// permission is needed), and the app quits with 0 if every check passed. `--rows-only` checks
-/// just the sidebar rows, for runs at other sidebar icon sizes; `--relaunch` checks that the
+/// just the sidebar rows, for runs at other sidebar icon sizes; `--library-check` changes files in
+/// the games folder (a copy: dev-ui-check.sh makes one) and checks the Smart Game Scanner, and
+/// `--library-check-relaunch` what it kept; `--playtime-check` plays the test pattern for about 12
+/// seconds in the real RetroArch (skipped if NES can't play here); `--large-library-check` needs a
+/// games folder with thousands of NES games (dev-ui-check.sh makes one); `--relaunch` checks that the
 /// appearance the full run ended on (Dark) was kept.
 ///
 /// The steps expect fresh settings and the test library from scripts/make-test-library.swift.
@@ -30,6 +34,10 @@ enum UIChecks {
     private static var folder: URL?
     private static var rowsOnly = false
     private static var relaunch = false
+    private static var libraryCheck = false
+    private static var libraryCheckRelaunch = false
+    private static var playtimeCheck = false
+    private static var largeLibraryCheck = false
     private static var window: NSWindow!
     private static var activity: NSObjectProtocol?
     /// The sidebar's scroll position before a step, to tell whether the step scrolled it.
@@ -44,6 +52,10 @@ enum UIChecks {
         folder = arguments.indices.contains(flag + 1) ? URL(filePath: arguments[flag + 1]) : nil
         rowsOnly = arguments.contains("--rows-only")
         relaunch = arguments.contains("--relaunch")
+        libraryCheck = arguments.contains("--library-check")
+        libraryCheckRelaunch = arguments.contains("--library-check-relaunch")
+        playtimeCheck = arguments.contains("--playtime-check")
+        largeLibraryCheck = arguments.contains("--large-library-check")
         macAppearanceAtLaunch = macAppearance
         // App Nap would hold back the timers below while the window isn't in front.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "RetroHub UI checks")
@@ -57,7 +69,13 @@ enum UIChecks {
             }
             window = main
             window.setContentSize(NSSize(width: 1100, height: 680))
-            if rowsOnly || relaunch {
+            if playtimeCheck || largeLibraryCheck {
+                steps = playtimeCheck ? playtimeSteps() : largeLibrarySteps()
+                runNextStep()
+            } else if libraryCheck || libraryCheckRelaunch {
+                steps = libraryCheckRelaunch ? libraryCheckRelaunchSteps() : libraryCheckSteps()
+                runNextStep()
+            } else if rowsOnly || relaunch {
                 steps = rowsOnly ? rowSteps() : relaunchSteps()
                 runNextStep()
             } else {
@@ -88,7 +106,7 @@ enum UIChecks {
         let step = steps.removeFirst()
         stepNumber += 1
         print("- \(step.name)")
-        if !window.isKeyWindow && !rowsOnly && !relaunch {
+        if !window.isKeyWindow && !rowsOnly && !relaunch && !libraryCheck && !libraryCheckRelaunch && !playtimeCheck && !largeLibraryCheck {
             print("  (the window isn't active, so keyboard and menu checks may fail)")
         }
         sidebarOrigin = sidebar?.visibleRect.origin ?? .zero
@@ -104,6 +122,145 @@ enum UIChecks {
 
     private static func rowSteps() -> [Step] {
         [Step(name: "rows at this sidebar size", action: {}, check: checkRows)]
+    }
+
+    // MARK: Smart Game Scanner
+
+    private static var library: Library? { ControllerDiagnostics.shared.library }
+    private static var navigator: Navigator? { ControllerDiagnostics.shared.navigator }
+    private static var gamesFolder: URL { URL(filePath: UserDefaults.standard.string(forKey: "libraryRoot") ?? "/nonexistent") }
+    private static let legend = "Legend of Placeholder, The (USA) [!].nes"
+    private static let renamedLegend = "Legend of Placeholder, The (USA) (Rev 1).nes"
+    /// File names of the favorite games, by the paths the library found them at.
+    private static var favoriteNames: [String] {
+        guard let library else { return [] }
+        return GameSystem.allCases.flatMap { library.games[$0] ?? [] }.filter(library.isFavorite).map(\.bootURL.lastPathComponent).sorted()
+    }
+
+    /// Files renamed, removed, added and copied while RetroHub runs; then what the banner and Library
+    /// Check say, and the same actions as their buttons. SwiftUI's buttons can't be pressed from
+    /// inside the app, so the pictures show the banner and the page for a person to look at.
+    private static func libraryCheckSteps() -> [Step] {
+        let nes = gamesFolder.appending(path: "NES")
+        return [
+            Step(name: "first scan", wait: 1.5, action: {
+                if let library, let game = library.games[.nes]?.first(where: { $0.bootURL.lastPathComponent == legend }) {
+                    library.toggleFavorite(game)
+                }
+            }, check: {
+                expect(library?.check.news == "", "the first scan is the baseline: nothing is news (\(library?.check.news ?? "no library"))")
+                expect(favoriteNames == [legend], "a favorite to follow through a rename: \(favoriteNames)")
+            }),
+            Step(name: "files change on disk", wait: 2.5, action: {
+                let fm = FileManager.default
+                try? fm.moveItem(at: nes.appending(path: legend), to: nes.appending(path: renamedLegend))
+                try? fm.removeItem(at: gamesFolder.appending(path: "SNES/UPPERCASE EXTENSION.SFC"))
+                fm.createFile(atPath: nes.appending(path: "Brand New Game.nes").path, contents: Data("RetroHub placeholder: a new game\n".utf8))
+                try? fm.copyItem(at: nes.appending(path: "RetroHub Test Pattern.nes"), to: nes.appending(path: "RetroHub Test Pattern (copy).nes"))
+                shortcut("r")
+            }, check: {
+                expect(library?.check.news == "2 new · 1 moved or renamed · 1 missing", "⌘R rescans, and the banner says what changed: \(library?.check.news ?? "")")
+                expect(favoriteNames.isEmpty, "nothing has changed yet: the favorite stays with the old name, which is missing: \(favoriteNames)")
+                expect(library?.check.summary.duplicates.contains { $0.paths.map { URL(filePath: $0).lastPathComponent }
+                    == ["RetroHub Test Pattern (copy).nes", "RetroHub Test Pattern.nes"] } == true, "the copy is a duplicate")
+            }),
+            Step(name: "NES with the banner", action: { navigator?.show(.system(.nes), library: library!) }, check: {}),
+            Step(name: "Library Check", wait: 1, action: { navigator?.show(.check, library: library!) }, check: {
+                expect(window.title == "Library Check", "Review opens Library Check: \(window.title)")
+                expect(library?.check.summary.renamed.map { URL(filePath: $0.to).lastPathComponent } == [renamedLegend], "it lists the rename")
+                expect(library?.check.summary.missing.map { URL(filePath: $0.path).lastPathComponent } == ["UPPERCASE EXTENSION.SFC"], "and the missing game")
+            }),
+            Step(name: "confirming", wait: 1, action: {
+                guard let library, let rename = library.check.summary.renamed.first else { return }
+                library.applyRename(from: rename.from, to: rename.to)
+                library.removeMissing(library.check.summary.missing.map(\.path))
+                library.markReviewed()
+                navigator?.leaveCheck(library: library)
+            }, check: {
+                expect(favoriteNames == [renamedLegend], "Same game moves the favorite to the new name: \(favoriteNames)")
+                expect(library?.check.summary.missing.isEmpty == true, "Remove forgets the missing game")
+                expect(window.title == "NES" && library?.check.news == "", "Done goes back to NES, and the banner is gone: \(window.title)")
+            }),
+        ]
+    }
+
+    /// A real session: the test pattern plays in RetroArch for about 12 seconds, then RetroArch is
+    /// closed and the session's time must be recorded once.
+    private static func playtimeSteps() -> [Step] {
+        let pattern = { library?.games[.nes]?.first { $0.bootURL.lastPathComponent == "RetroHub Test Pattern.nes" } }
+        guard Launcher.readiness(for: .nes).ready, pattern() != nil else {
+            print("  (skipped: NES can't play on this Mac, or the test pattern isn't in the library)")
+            return []
+        }
+        return [
+            Step(name: "play the test pattern", wait: 12, action: {
+                if let library, let game = pattern() { library.play(game) }
+            }, check: {
+                expect(library?.session?.process.isRunning == true, "the emulator is running")
+                expect(library.map { $0.playtime(pattern()!) } == 0, "nothing is recorded while it runs")
+            }),
+            Step(name: "close the emulator", wait: 3, action: { library?.session?.process.terminate() }, check: {
+                expect(library?.session == nil, "RetroHub saw it close")
+                let record = library?.playtime[pattern()!.bootURL.path]
+                expect(record?.sessions == 1 && (11...16).contains(record?.seconds ?? 0),
+                       "the session's time is recorded once: \(record.map { "\($0.seconds) s, \($0.sessions) session" } ?? "nothing")")
+            }),
+        ]
+    }
+
+    /// The longest the main thread went without running a 10 ms timer over the next `seconds`:
+    /// how long the window would have been frozen.
+    private static var longestStall = 0.0
+    private static var lastTick = Date.now
+    private static func measureStalls(for seconds: Double) {
+        longestStall = 0
+        lastTick = .now
+        // A main run loop timer: it runs on the main thread.
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                longestStall = max(longestStall, Date.now.timeIntervalSince(lastTick))
+                lastTick = .now
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { timer.invalidate() }
+    }
+
+    /// Thousands of games: rescanning doesn't freeze the window, and only covers near the screen
+    /// are fetched, in the browser and in couch mode.
+    private static func largeLibrarySteps() -> [Step] {
+        var coversBefore = 0
+        return [
+            Step(name: "the library", wait: 1, action: {}, check: {
+                let count = library?.games[.nes]?.count ?? 0
+                expect(count > 3000, "\(count) NES games found")
+            }),
+            Step(name: "rescanning", wait: 3, action: {
+                measureStalls(for: 2.5)
+                library?.rescan()
+            }, check: {
+                expect(longestStall < 0.15, String(format: "the window keeps running during a rescan: longest pause %.0f ms", longestStall * 1000))
+            }),
+            Step(name: "NES", wait: 2, action: { navigator?.show(.system(.nes), library: library!) }, check: {
+                // Every cover asked for since launch: only the games that have been on screen.
+                let asked = CoverArt.requests.withLock { $0 }
+                expect(asked < 200, "covers fetched for the games in view, not all \(library?.games[.nes]?.count ?? 0): \(asked)")
+            }),
+            Step(name: "couch mode", wait: 3, action: {
+                coversBefore = CoverArt.requests.withLock { $0 }
+                navigator?.setCouchMode(true, library: library!)
+            }, check: {
+                let asked = CoverArt.requests.withLock { $0 } - coversBefore
+                expect(asked < 50, "couch mode fetches covers near the current game only: \(asked)")
+            }),
+            Step(name: "back out of couch mode", wait: 2, action: { navigator?.setCouchMode(false, library: library!) }, check: {}),
+        ]
+    }
+
+    private static func libraryCheckRelaunchSteps() -> [Step] {
+        [Step(name: "after quitting and reopening", wait: 1.5, action: {}, check: {
+            expect(library?.check.news == "", "no banner: the changes were reviewed")
+            expect(favoriteNames == [renamedLegend], "the favorite is still on the new name: \(favoriteNames)")
+        })]
     }
 
     private static func relaunchSteps() -> [Step] {
