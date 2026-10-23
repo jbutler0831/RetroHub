@@ -14,7 +14,8 @@ const FILTERS = {
   smooth: 'edge-smoothing/xbrz/xbrz-freescale-multipass',
 };
 
-const DEFAULTS = { filter: 'off', scale: 1, widescreen: false };
+// fullscreen: games start full screen in RetroArch, unless turned off in Setup.
+const DEFAULTS = { filter: 'off', scale: 1, widescreen: false, fullscreen: true };
 
 /** 2D systems the screen filter applies to, and 3D systems that get resolution and widescreen options. */
 const FILTER_SYSTEMS = ['nes', 'snes', 'gb', 'gbc', 'gba', 'genesis', 'mastersystem', 'gamegear', 'segacd', 'sega32x',

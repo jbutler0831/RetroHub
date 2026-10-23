@@ -100,6 +100,8 @@ sign it with a Developer ID certificate and notarize it:
     cd desktop
     npm install
     npm start          # run it
+    npm run dev        # run a development copy: settings and games in .devdata/, never ~/Games
+    npm test           # tests
     npm run dist       # build installers for the current OS
 
 Publishing a GitHub release triggers `.github/workflows/release.yml`, which builds

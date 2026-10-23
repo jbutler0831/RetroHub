@@ -93,18 +93,31 @@ function coreDirs(retroarch) {
 
 const coreExt = platform === 'darwin' ? 'dylib' : platform === 'win32' ? 'dll' : 'so';
 
-function run(command, args) {
+/**
+ * Starts a program and resolves with its process once it's running. It's detached, so it keeps
+ * running if RetroHub quits, but its 'exit' event still fires while RetroHub is open.
+ */
+function startProcess(command, args) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { detached: true, stdio: 'ignore' });
     child.once('error', reject);
     child.once('spawn', () => {
       child.unref();
-      resolvePromise();
+      resolvePromise(child);
     });
   });
 }
 
-/** The first installed way to play a system: { label, start(gamePath) } or null. */
+/** Full screen or in a window, for this run only (RetroArch's own setting is left alone). */
+function retroArchWindowArgs(fullscreen) {
+  return fullscreen ? ['-f'] : [];
+}
+
+/**
+ * The first installed way to play a system: { label, start(gamePath) } or null. start resolves
+ * with the emulator's process, or null for OpenEmu, which macOS opens and which stays open as a
+ * library app after the game.
+ */
 function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS, { fullscreen = false } = {}) {
   for (const backend of system.backends) {
     if (backend.type === 'retroarch') {
@@ -116,7 +129,7 @@ function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS, { fullsc
         if (corePath) {
           return {
             label: `RetroArch (${core.name})`,
-            start: (game) => run(retroarch.command, [...retroarch.prefix, ...(fullscreen ? ['-f'] : []), '-L', corePath,
+            start: (game) => startProcess(retroarch.command, [...retroarch.prefix, ...retroArchWindowArgs(fullscreen), '-L', corePath,
               ...graphicsOptions.retroArchArgs(system.id, core, retroarch, graphics), game]),
           };
         }
@@ -124,14 +137,14 @@ function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS, { fullsc
     } else if (backend.type === 'openemu') {
       if (platform !== 'darwin') continue;
       const openemu = resolve(EMULATORS.find((e) => e.id === 'openemu'), customPaths);
-      if (openemu) return { label: 'OpenEmu', start: (game) => run('open', ['-a', openemu.appPath, game]) };
+      if (openemu) return { label: 'OpenEmu', start: (game) => startProcess('open', ['-a', openemu.appPath, game]).then(() => null) };
     } else {
       const emulator = EMULATORS.find((e) => e.id === backend.emulator);
       const resolved = resolve(emulator, customPaths);
       if (resolved) {
         // Vita3K runs installed games by title ID, the name of the game's folder.
         const target = (game) => (emulator.id === 'vita3k' ? path.basename(game) : game);
-        return { label: emulator.name, start: (game) => run(resolved.command, [...resolved.prefix, ...backend.args, target(game)]) };
+        return { label: emulator.name, start: (game) => startProcess(resolved.command, [...resolved.prefix, ...backend.args, target(game)]) };
       }
     }
   }
@@ -162,15 +175,16 @@ function readiness(system, customPaths) {
   return { ready: false, summary: 'Setup needed', detail, missing: ids[0] || null };
 }
 
+/** Starts the game; resolves with { label, process } (process is null for OpenEmu). */
 async function launch(game, customPaths, graphics, options) {
   const system = SYSTEMS.find((s) => s.id === game.system);
   const found = plan(system, customPaths, graphics, options);
   if (!found) throw new Error(readiness(system, customPaths).detail);
   try {
-    await found.start(game.bootPath);
+    return { label: found.label, process: await found.start(game.bootPath) };
   } catch (error) {
     throw new Error(`Couldn't start ${found.label}: ${error.message}`);
   }
 }
 
-module.exports = { availableEmulators, resolve, readiness, launch };
+module.exports = { availableEmulators, resolve, readiness, launch, startProcess, retroArchWindowArgs };

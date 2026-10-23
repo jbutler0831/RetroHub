@@ -9,6 +9,9 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node --test test/*.test.js",
+    "test:window": "node test/window/run.js",
     "dist": "electron-builder --publish never"
   },
   "build": {
