@@ -14,8 +14,10 @@ const RECENT_LIMIT = 24;
 const consoleMode = process.argv.includes('--console');
 // `--dev` (npm run dev) keeps its settings in .devdata/desktop and its games in .devdata/Games at
 // the repository root, like the Mac app's RetroHub Dev, so a real library and settings are never
-// touched.
-const devData = process.argv.includes('--dev') ? path.join(__dirname, '../../.devdata') : null;
+// touched. `--data-dir=<folder>` does the same in another folder (the window checks use a fresh one).
+const dataDirArg = process.argv.find((arg) => arg.startsWith('--data-dir='));
+const devData = dataDirArg ? path.resolve(dataDirArg.slice('--data-dir='.length))
+  : process.argv.includes('--dev') ? path.join(__dirname, '../../.devdata') : null;
 if (devData) app.setPath('userData', path.join(devData, 'desktop'));
 
 // ---- Settings ---------------------------------------------------------------
