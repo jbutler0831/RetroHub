@@ -26,8 +26,12 @@ const relative = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
 const systemById = (id) => S.systems.find((s) => s.id === id);
 const systemFor = (key) => (key.startsWith('sys:') ? systemById(key.slice(4)) : null);
-/** The game lists, in the order the controller cycles through them. */
-const listKeys = () => ['favorites', 'recent', ...S.systems.map((s) => `sys:${s.id}`)];
+/** The sidebar, top to bottom: the lists and Setup, then each maker's systems under its name. */
+const sidebarSections = () => [{ title: null, keys: ['favorites', 'recent', 'setup'] },
+  ...S.makers.map((maker) => ({ title: maker, keys: S.systems.filter((s) => s.maker === maker).map((s) => `sys:${s.id}`) }))];
+const sidebarKeys = () => sidebarSections().flatMap((section) => section.keys);
+/** The game lists in sidebar order: what LB/RB and Ctrl+[ / Ctrl+] step through. */
+const listKeys = () => sidebarKeys().filter((key) => key !== 'setup');
 /** Couch mode only shows lists with games, so the controller never lands on a blank screen. */
 const couchKeys = () => listKeys().filter((key) => gamesFor(key).length);
 const allGames = () => S.systems.flatMap((s) => S.games[s.id] || []);
@@ -171,18 +175,21 @@ function renderSidebar() {
     // An orange count with a warning sign (not color alone) when nothing installed can play the games.
     const setupNeeded = count > 0 && systemFor(key)?.readiness.ready === false;
     const label = [itemInfo(key).title, ...(count === undefined ? [] : [gamesText(count)]), ...(setupNeeded ? ['setup needed'] : [])];
-    return `<button class="nav-item${key === selection ? ' active' : ''}" data-key="${key}"
+    // Only the selected row is a Tab stop; ↑ and ↓ move between rows.
+    return `<button class="nav-item${key === selection ? ' active' : ''}" data-key="${key}" tabindex="${key === selection ? 0 : -1}"
         title="${esc(rowHelp(key, count))}" aria-label="${esc(label.join(', '))}">
       ${tile(key)}<span class="name">${esc(itemInfo(key).title)}</span>${count ? `<span class="badge${setupNeeded ? ' setup-needed' : ''}">${setupNeeded ? I.alert({ size: 10 }) : ''}${count}</span>` : ''}
     </button>`;
   };
-  nav.innerHTML =
-    `<div class="nav-section">${row('favorites', gamesFor('favorites').length)}${row('recent', gamesFor('recent').length)}${row('setup')}</div>` +
-    S.makers.map((maker) => `<div class="nav-section"><div class="nav-heading">${maker}</div>
-      ${S.systems.filter((s) => s.maker === maker).map((s) => row(`sys:${s.id}`, (S.games[s.id] || []).length)).join('')}
+  const sidebarFocused = nav.contains(document.activeElement);
+  nav.innerHTML = sidebarSections().map((section) => `<div class="nav-section">${section.title ? `<div class="nav-heading">${section.title}</div>` : ''}
+      ${section.keys.map((key) => row(key, key === 'setup' ? undefined : gamesFor(key).length)).join('')}
     </div>`).join('');
+  const active = nav.querySelector('.nav-item.active');
+  // Redrawing the rows mustn't take keyboard focus out of the sidebar.
+  if (sidebarFocused) active?.focus({ preventScroll: true });
   // LB/RB and the keyboard can select a row that's out of view.
-  nav.querySelector('.nav-item.active')?.scrollIntoView({ block: 'nearest' });
+  active?.scrollIntoView({ block: 'nearest' });
 }
 
 function renderController() {
@@ -338,6 +345,11 @@ function coverMetrics() {
   return { width: parseFloat(style.getPropertyValue('--cover-w')), gap: parseFloat(style.getPropertyValue('--cover-gap')) };
 }
 
+/** Where the game picked in this list is, in the browser or couch mode, so going back lands on it. */
+function pickedIndex() {
+  return Math.max(0, gamesFor(selection).findIndex((g) => g.id === selectedGame[selection]));
+}
+
 function renderCouch() {
   const keys = couchKeys();
   const games = gamesFor(selection);
@@ -366,6 +378,7 @@ function updateCouch() {
   const game = games[couchIndex];
   const carousel = $('carousel');
   if (!game || !carousel) return;
+  selectedGame[selection] = game.id;
   carousel.querySelectorAll('.cover').forEach((el, i) => el.classList.toggle('current', i === couchIndex));
   const { width, gap } = coverMetrics();
   carousel.style.transform = `translateX(${window.innerWidth / 2 - (couchIndex * (width + gap) + width / 2)}px)`;
@@ -384,9 +397,10 @@ function setCouch(on) {
   couch = on;
   const keys = couchKeys();
   if (on && keys.length && !keys.includes(selection)) selection = keys[0];
-  couchIndex = 0;
+  couchIndex = pickedIndex();
   api.setFullScreen(on || S.consoleMode);
   render();
+  if (!on) content.focus();
 }
 
 // ---- Actions -----------------------------------------------------------------------
@@ -438,9 +452,35 @@ function cycle(step) {
   let index = keys.indexOf(selection);
   if (index < 0) index = step > 0 ? -1 : 0;
   selection = keys[(index + step + keys.length) % keys.length];
-  couchIndex = 0;
+  couchIndex = pickedIndex();
   render();
 }
+
+/** Shows a list or Setup in the browser, leaving couch mode. */
+function show(key) {
+  if (couch) setCouch(false);
+  selection = key;
+  render();
+}
+
+/** Puts the cursor in the search field (Ctrl+F). */
+function findGames() {
+  if (couch) setCouch(false);
+  $('search').focus();
+  $('search').select();
+}
+
+/** The sidebar row above (-1) or below (1), Setup included; focus stays in the sidebar. */
+function stepSidebar(step) {
+  const keys = sidebarKeys();
+  const index = keys.indexOf(selection);
+  const next = keys[Math.min(Math.max(index + step, 0), keys.length - 1)];
+  if (next === selection) return;
+  selection = next;
+  render();
+}
+
+const focusSidebar = () => nav.querySelector('.nav-item.active')?.focus();
 
 /** Handles a controller or keyboard command. */
 function command(cmd) {
@@ -483,7 +523,7 @@ nav.addEventListener('click', (event) => {
   if (!item) return;
   selection = item.dataset.key;
   render();
-  content.focus();
+  focusSidebar();
 });
 
 async function handleButtons(event) {
@@ -496,7 +536,7 @@ async function handleButtons(event) {
   else if ('locate' in d) applyState(await api.locateEmulator(d.locate));
   else if ('play' in d) play(target.closest('[data-id]').dataset.id);
   else if ('exit' in d) setCouch(false);
-  else if ('tab' in d) { selection = d.tab; couchIndex = 0; render(); }
+  else if ('tab' in d) { selection = d.tab; couchIndex = pickedIndex(); render(); }
   else if ('graphics' in d) applyState(await api.setGraphics({ [d.graphics]: JSON.parse(d.value) }));
   else if ('appearance' in d) applyState(await api.setAppearance(d.appearance));
   return true;
@@ -505,7 +545,10 @@ async function handleButtons(event) {
 content.addEventListener('click', async (event) => {
   if (await handleButtons(event)) return;
   const card = event.target.closest('.card');
-  if (card) select(card.dataset.id);
+  if (card) {
+    select(card.dataset.id);
+    content.focus();
+  }
 });
 content.addEventListener('dblclick', (event) => {
   const card = event.target.closest('.card');
@@ -544,11 +587,42 @@ $('search').addEventListener('input', (event) => {
 });
 
 const KEYS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Enter: 'play', f: 'favorite', F: 'favorite', Escape: 'back' };
+// Ctrl (⌘ on a Mac) shortcuts, as in the Mac app's menus: Setup, Find, Previous/Next System, Rescan.
+const SHORTCUTS = {
+  ',': () => show('setup'),
+  f: findGames,
+  '[': () => cycle(-1),
+  ']': () => cycle(1),
+  r: async () => applyState(await api.rescan(), true),
+};
 window.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+    const shortcut = modal.hidden && SHORTCUTS[event.key.toLowerCase()];
+    if (shortcut) {
+      event.preventDefault();
+      shortcut();
+    }
+    return; // Copy, paste and the rest behave as usual.
+  }
   if (event.target.id === 'search') {
     if (event.key === 'Escape') event.target.blur();
     if (event.key === 'Enter' || event.key === 'ArrowDown') content.focus();
     return;
+  }
+  if (!couch && modal.hidden && nav.contains(event.target)) {
+    // In the sidebar: ↑ and ↓ move through the lists; Return or → opens the games.
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      stepSidebar(event.key === 'ArrowUp' ? -1 : 1);
+    } else if ((event.key === 'Enter' || event.key === 'ArrowRight') && selection !== 'setup') {
+      event.preventDefault();
+      content.focus();
+    }
+    return;
+  }
+  if (!couch && modal.hidden && event.key === 'Escape') {
+    event.preventDefault();
+    return focusSidebar();
   }
   const cmd = KEYS[event.key];
   if (!cmd) return;
@@ -571,7 +645,10 @@ function cleanPadName(id) {
 function edge(key, down, cmd) {
   const wasDown = held.get(key);
   held.set(key, down);
-  if (down && !wasDown && document.hasFocus()) command(cmd);
+  if (down && !wasDown && document.hasFocus()) {
+    if (nav.contains(document.activeElement)) content.focus();
+    command(cmd);
+  }
 }
 
 function pollGamepads() {

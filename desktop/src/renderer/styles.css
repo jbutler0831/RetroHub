@@ -92,7 +92,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-align: left;
 }
 .nav-item:hover { background: var(--selected-row); }
-.nav-item.active { background: var(--accent); color: #fff; }
+/* The selected row is blue while the sidebar has keyboard focus, grey while the games have it. */
+.nav-item.active { background: var(--selected-row); }
+#nav:focus-within .nav-item.active { background: var(--accent); color: #fff; }
+.nav-item:focus { outline: none; }
 .nav-item .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .badge {
@@ -111,7 +114,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--orange-text);
   background: color-mix(in srgb, var(--orange) 18%, transparent);
 }
-.nav-item.active .badge { color: #fff; background: rgba(255, 255, 255, 0.25); }
+#nav:focus-within .nav-item.active .badge { color: #fff; background: rgba(255, 255, 255, 0.25); }
 
 .tile {
   flex: none;
@@ -274,7 +277,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: #111;
 }
 .card:hover .cover { transform: scale(1.02); box-shadow: var(--shadow-raised); }
-.card.selected .cover { transform: scale(1.04); box-shadow: var(--shadow-raised), 0 0 0 3px var(--accent); }
+/* The picked game is outlined in blue while the games have keyboard focus, in grey otherwise. */
+.card.selected .cover { transform: scale(1.04); box-shadow: var(--shadow-raised), 0 0 0 3px var(--text-2); }
+#content:focus-within .card.selected .cover { box-shadow: var(--shadow-raised), 0 0 0 3px var(--accent); }
 
 .cover img { width: 100%; height: 100%; object-fit: contain; display: block; }
 
