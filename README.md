@@ -25,6 +25,45 @@ emulate anything itself; it finds your games and launches them in:
 Also: cover art, favorites, recently played, and a full-screen couch mode
 for controllers (press Menu/Options, or the TV button in the toolbar).
 
+## Features
+
+The Mac app and the Windows/Linux/Raspberry Pi app work the same way.
+
+- **Library Check.** RetroHub remembers the games it has found, and each time it scans (whenever you come back to it, or
+  with Rescan) it notices new, moved or renamed, missing and duplicate games. A banner says what changed, and Library
+  Check (also in Setup › Library) lists it all. Nothing changes until you choose:
+  - **Moved or renamed:** **Same game** moves its favorite and play history to the new name.
+  - **Missing:** games stay listed, with their favorites and history, until you remove them, so an unplugged drive
+    loses nothing.
+  - **New and duplicates:** listed, with **Show** to find each copy.
+  - **No cover art found:** **Look again** tries the cover server again.
+- **Setup warnings.** A system with games but no emulator shows an orange ⚠ count in the sidebar; hover it to see what's
+  needed.
+- **Appearance.** Follow System, Light or Dark, in Setup (and the Mac's View menu). It changes RetroHub only; couch mode
+  keeps its dark TV look.
+- **One game at a time.** Pressing Play while a game runs doesn't start a second copy: the Mac app brings the running
+  emulator forward, and the Windows/Linux app says which game is still running. RetroHub comes back to the front when
+  the game closes.
+- **Keyboard and controller.**
+
+  | | Keyboard (⌘ on a Mac, Ctrl elsewhere) | Controller |
+  |---|---|---|
+  | Move through the sidebar | ↑ ↓ | |
+  | Into the games, and back | Return or →, then Esc | |
+  | Move between games | Arrow keys | D-pad or left stick |
+  | Play | Return | A / ✕ |
+  | Favorite | F | Y / △ |
+  | Previous / next system | ⌘[ ⌘] | LB / RB (L1 / R1) |
+  | Search | ⌘F | |
+  | Setup | ⌘, | |
+  | Rescan | ⌘R | |
+  | Couch mode | | Menu / Options |
+  | Leave couch mode, close a message | Esc | B / ○ |
+
+  Each list remembers the game you picked, in the browser and in couch mode.
+- **Screen readers.** Sidebar rows read as, for example, "Sega Genesis, 1 game, setup needed". In the Windows/Linux app,
+  moving between games also announces each one.
+
 ## Downloads
 
 Get the latest version from the Releases page:
@@ -67,6 +106,30 @@ Publishing a GitHub release triggers `.github/workflows/release.yml`, which buil
 the Mac, Windows and Linux (x86_64 and Raspberry Pi) versions and attaches them to the release. The Mac build
 from CI is signed ad hoc, and the Windows build is unsigned, so Windows SmartScreen
 shows "Windows protected your PC" on first run (click **More info** → **Run anyway**).
+
+## Developing and checking
+
+Build from a `git clone`, not a downloaded ZIP: macOS marks downloaded files, and `build.sh` then waits on a security
+prompt. Development copies keep their own settings and use a test library in `.devdata/`, so `~/Games` and an
+installed RetroHub are never touched. Coding agents: see [AGENTS.md](AGENTS.md).
+
+**Mac app** (from `mac/`):
+
+    scripts/dev-run.sh                              # RetroHub Dev, on the test library
+    "$(swift build --show-bin-path)/RetroHub" --self-test
+    scripts/dev-ui-check.sh                         # window checks: needs the screen for about two minutes
+    scripts/dev-inventory.sh                        # what can play on this Mac (read-only)
+    INSTALL=0 ./build.sh                            # universal release build, without installing it
+
+**Windows/Linux/Raspberry Pi app** (from `desktop/`):
+
+    npm run dev            # a development copy
+    npm test               # tests
+    npm run test:window    # window checks: drive the real window (sidebar, keyboard, appearance, Library Check,
+                           # small screens, a simulated controller, screen reader names)
+
+Pull requests run the desktop checks on Windows, Linux and arm64 Linux (as on a Raspberry Pi). Anything that needs a
+person (a real controller, a game on screen, a screen reader speaking) stays unverified until someone tries it.
 
 ## Games folder
 
