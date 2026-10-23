@@ -13,7 +13,8 @@ import AppKit
 /// just the sidebar rows, for runs at other sidebar icon sizes; `--library-check` changes files in
 /// the games folder (a copy: dev-ui-check.sh makes one) and checks the Smart Game Scanner, and
 /// `--library-check-relaunch` what it kept; `--playtime-check` plays the test pattern for about 12
-/// seconds in the real RetroArch (skipped if NES can't play here); `--relaunch` checks that the
+/// seconds in the real RetroArch (skipped if NES can't play here); `--large-library-check` needs a
+/// games folder with thousands of NES games (dev-ui-check.sh makes one); `--relaunch` checks that the
 /// appearance the full run ended on (Dark) was kept.
 ///
 /// The steps expect fresh settings and the test library from scripts/make-test-library.swift.
@@ -36,6 +37,7 @@ enum UIChecks {
     private static var libraryCheck = false
     private static var libraryCheckRelaunch = false
     private static var playtimeCheck = false
+    private static var largeLibraryCheck = false
     private static var window: NSWindow!
     private static var activity: NSObjectProtocol?
     /// The sidebar's scroll position before a step, to tell whether the step scrolled it.
@@ -53,6 +55,7 @@ enum UIChecks {
         libraryCheck = arguments.contains("--library-check")
         libraryCheckRelaunch = arguments.contains("--library-check-relaunch")
         playtimeCheck = arguments.contains("--playtime-check")
+        largeLibraryCheck = arguments.contains("--large-library-check")
         macAppearanceAtLaunch = macAppearance
         // App Nap would hold back the timers below while the window isn't in front.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "RetroHub UI checks")
@@ -66,8 +69,8 @@ enum UIChecks {
             }
             window = main
             window.setContentSize(NSSize(width: 1100, height: 680))
-            if playtimeCheck {
-                steps = playtimeSteps()
+            if playtimeCheck || largeLibraryCheck {
+                steps = playtimeCheck ? playtimeSteps() : largeLibrarySteps()
                 runNextStep()
             } else if libraryCheck || libraryCheckRelaunch {
                 steps = libraryCheckRelaunch ? libraryCheckRelaunchSteps() : libraryCheckSteps()
@@ -103,7 +106,7 @@ enum UIChecks {
         let step = steps.removeFirst()
         stepNumber += 1
         print("- \(step.name)")
-        if !window.isKeyWindow && !rowsOnly && !relaunch && !libraryCheck && !libraryCheckRelaunch && !playtimeCheck {
+        if !window.isKeyWindow && !rowsOnly && !relaunch && !libraryCheck && !libraryCheckRelaunch && !playtimeCheck && !largeLibraryCheck {
             print("  (the window isn't active, so keyboard and menu checks may fail)")
         }
         sidebarOrigin = sidebar?.visibleRect.origin ?? .zero
@@ -202,6 +205,54 @@ enum UIChecks {
                 expect(record?.sessions == 1 && (11...16).contains(record?.seconds ?? 0),
                        "the session's time is recorded once: \(record.map { "\($0.seconds) s, \($0.sessions) session" } ?? "nothing")")
             }),
+        ]
+    }
+
+    /// The longest the main thread went without running a 10 ms timer over the next `seconds`:
+    /// how long the window would have been frozen.
+    private static var longestStall = 0.0
+    private static var lastTick = Date.now
+    private static func measureStalls(for seconds: Double) {
+        longestStall = 0
+        lastTick = .now
+        // A main run loop timer: it runs on the main thread.
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                longestStall = max(longestStall, Date.now.timeIntervalSince(lastTick))
+                lastTick = .now
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { timer.invalidate() }
+    }
+
+    /// Thousands of games: rescanning doesn't freeze the window, and only covers near the screen
+    /// are fetched, in the browser and in couch mode.
+    private static func largeLibrarySteps() -> [Step] {
+        var coversBefore = 0
+        return [
+            Step(name: "the library", wait: 1, action: {}, check: {
+                let count = library?.games[.nes]?.count ?? 0
+                expect(count > 3000, "\(count) NES games found")
+            }),
+            Step(name: "rescanning", wait: 3, action: {
+                measureStalls(for: 2.5)
+                library?.rescan()
+            }, check: {
+                expect(longestStall < 0.15, String(format: "the window keeps running during a rescan: longest pause %.0f ms", longestStall * 1000))
+            }),
+            Step(name: "NES", wait: 2, action: { navigator?.show(.system(.nes), library: library!) }, check: {
+                // Every cover asked for since launch: only the games that have been on screen.
+                let asked = CoverArt.requests.withLock { $0 }
+                expect(asked < 200, "covers fetched for the games in view, not all \(library?.games[.nes]?.count ?? 0): \(asked)")
+            }),
+            Step(name: "couch mode", wait: 3, action: {
+                coversBefore = CoverArt.requests.withLock { $0 }
+                navigator?.setCouchMode(true, library: library!)
+            }, check: {
+                let asked = CoverArt.requests.withLock { $0 } - coversBefore
+                expect(asked < 50, "couch mode fetches covers near the current game only: \(asked)")
+            }),
+            Step(name: "back out of couch mode", wait: 2, action: { navigator?.setCouchMode(false, library: library!) }, check: {}),
         ]
     }
 

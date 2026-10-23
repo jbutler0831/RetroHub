@@ -118,7 +118,9 @@ struct CouchView: View {
         GeometryReader { geometry in
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 36) {
+                    // Lazy: only covers near the current game are made, and their art fetched
+                    // (J-Star's Shift 01 audit, O5).
+                    LazyHStack(spacing: 36) {
                         ForEach(Array(games.enumerated()), id: \.element.id) { offset, game in
                             CoverView(game: game)
                                 .frame(width: Self.coverSize.width, height: Self.coverSize.height)
@@ -134,8 +136,13 @@ struct CouchView: View {
                     .padding(.horizontal, max(0, (geometry.size.width - Self.coverSize.width) / 2))
                     .frame(height: geometry.size.height)
                 }
-                .onChange(of: index, initial: true) {
-                    if let id = current?.id {
+                .onChange(of: index, initial: true) { old, new in
+                    guard let id = current?.id else { return }
+                    // Straight to the current game when couch mode opens, without sliding past the
+                    // ones before it (each would be made and its cover fetched); animated after that.
+                    if old == new {
+                        proxy.scrollTo(id, anchor: .center)
+                    } else {
                         withAnimation(.snappy(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
                     }
                 }

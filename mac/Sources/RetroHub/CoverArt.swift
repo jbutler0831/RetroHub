@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage
+import os
 
 /// Finds box art for a game: a local image next to the game first, then the
 /// libretro-thumbnails library, cached on disk.
@@ -30,7 +31,15 @@ enum CoverArt {
         try? FileManager.default.removeItem(at: cacheFiles(game).missMarker)
     }
 
+    #if DEBUG
+    /// How many covers have been asked for: UIChecks checks only those near the screen are.
+    static let requests = OSAllocatedUnfairLock(initialState: 0)
+    #endif
+
     static func data(for game: Game) async -> Data? {
+        #if DEBUG
+        requests.withLock { $0 += 1 }
+        #endif
         let fm = FileManager.default
         if let local = game.localCovers.first(where: { fm.fileExists(atPath: $0.path) }) {
             return try? Data(contentsOf: local)

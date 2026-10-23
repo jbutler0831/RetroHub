@@ -224,14 +224,40 @@ final class Library: ObservableObject {
         }
     }
 
+    /// Counts rescans, so the results of an older one that finishes late are dropped.
+    private var scanGeneration = 0
+
+    /// Looks for games off the main thread, so a large library (or a network drive) doesn't stall
+    /// the window; RetroHub rescans each time it comes forward. The results arrive a moment later.
     func rescan() {
-        games = Dictionary(uniqueKeysWithValues: GameSystem.allCases.map { system in
-            (system, Self.scan(system, in: folder(for: system)))
-        })
+        scanGeneration += 1
+        let generation = scanGeneration
+        let folders = GameSystem.allCases.map { ($0, folder(for: $0)) }
+        Task.detached(priority: .userInitiated) {
+            let found = Dictionary(uniqueKeysWithValues: folders.map { system, folder in (system, Library.scan(system, in: folder)) })
+            // Each game's size and date for the scanner, and whether its cover was looked for and not
+            // found: file checks too, so they're done here as well.
+            let all = found.values.flatMap { $0 }
+            let stats = Dictionary(uniqueKeysWithValues: all.compactMap { game in
+                Scanner.statFile(game.bootURL.path).map { (game.bootURL.path, $0) }
+            })
+            let noArt = Set(all.filter(CoverArt.knownMissing).map(\.bootURL.path))
+            await self.scanned(found, stats: stats, noArt: noArt, generation: generation)
+        }
+    }
+
+    /// Paths of the games whose cover was looked for and not found, from the last scan.
+    private var noArtPaths: Set<String> = []
+
+    private func scanned(_ found: [GameSystem: [Game]], stats: [String: Scanner.FileInfo], noArt: Set<String>, generation: Int) {
+        guard generation == scanGeneration else { return }
+        games = found
+        noArtPaths = noArt
         let now = Date.now.timeIntervalSince1970 * 1000
         // The first scan is the baseline: what's there already isn't news.
         if scanner.index == nil { scanner.reviewedAt = now }
-        scanner.index = Scanner.updateIndex(scanner.index, games: GameSystem.allCases.flatMap { games[$0] ?? [] }, now: now)
+        scanner.index = Scanner.updateIndex(scanner.index, games: GameSystem.allCases.flatMap { games[$0] ?? [] }, now: now,
+                                            stat: { stats[$0] })
         saveScanner()
         refreshCheck()
         fingerprintInBackground()
@@ -250,7 +276,7 @@ final class Library: ObservableObject {
     private func refreshCheck() {
         let summary = Scanner.summarize(scanner.index ?? [:], reviewedAt: scanner.reviewedAt)
         check = LibraryCheck(summary: summary,
-                             noArt: GameSystem.allCases.flatMap { games[$0] ?? [] }.filter(CoverArt.knownMissing),
+                             noArt: GameSystem.allCases.flatMap { games[$0] ?? [] }.filter { noArtPaths.contains($0.key) },
                              newCount: summary.added.count, renamedCount: summary.renamed.count,
                              newlyMissingCount: summary.missing.filter { $0.since > scanner.reviewedAt }.count)
     }
@@ -323,6 +349,7 @@ final class Library: ObservableObject {
     /// Looks for the covers that weren't found again, next time they're shown.
     func lookAgainForCovers() {
         check.noArt.forEach(CoverArt.forgetMiss)
+        noArtPaths.removeAll()
         refreshCheck()
     }
 
@@ -425,7 +452,7 @@ final class Library: ObservableObject {
     func playtime(_ game: Game) -> Int { playtime[game.key]?.seconds ?? 0 }
     func playtime(path: String) -> Int { playtime[path]?.seconds ?? 0 }
 
-    static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
+    nonisolated static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
         let games = switch system {
         case .ps3: scanPS3(folder)
         case .ps4: scanPS4(folder)
@@ -435,7 +462,7 @@ final class Library: ObservableObject {
         return games.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
-    private static func scanFiles(_ system: GameSystem, _ folder: URL) -> [Game] {
+    nonisolated private static func scanFiles(_ system: GameSystem, _ folder: URL) -> [Game] {
         guard let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil,
                                                          options: [.skipsHiddenFiles]) else { return [] }
         return files.compactMap { $0 as? URL }
@@ -448,7 +475,7 @@ final class Library: ObservableObject {
     }
 
     /// Disc dumps keep EBOOT.BIN under PS3_GAME/USRDIR; PSN games keep it under USRDIR.
-    private static func scanPS3(_ folder: URL) -> [Game] {
+    nonisolated private static func scanPS3(_ folder: URL) -> [Game] {
         let fm = FileManager.default
         let dirs = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil,
                                                 options: [.skipsHiddenFiles])) ?? []
@@ -464,7 +491,7 @@ final class Library: ObservableObject {
     }
 
     /// PS4 game dumps keep eboot.bin at the top of the folder and their details under sce_sys.
-    private static func scanPS4(_ folder: URL) -> [Game] {
+    nonisolated private static func scanPS4(_ folder: URL) -> [Game] {
         let fm = FileManager.default
         let dirs = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil,
                                                 options: [.skipsHiddenFiles])) ?? []
@@ -478,7 +505,7 @@ final class Library: ObservableObject {
     }
 
     /// Games installed in Vita3K: one folder per title ID, with details under sce_sys.
-    private static func scanVita(_ folder: URL) -> [Game] {
+    nonisolated private static func scanVita(_ folder: URL) -> [Game] {
         let fm = FileManager.default
         let dirs = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil,
                                                 options: [.skipsHiddenFiles])) ?? []
@@ -491,7 +518,7 @@ final class Library: ObservableObject {
     }
 
     /// Reads the TITLE entry from a PS3, PS4 or PS Vita PARAM.SFO file (little-endian key/value table).
-    static func sfoTitle(at url: URL) -> String? {
+    nonisolated static func sfoTitle(at url: URL) -> String? {
         guard let data = try? Data(contentsOf: url), data.count >= 20,
               data.prefix(4) == Data([0x00, 0x50, 0x53, 0x46]) else { return nil }
         func u16(_ offset: Int) -> Int { Int(data[offset]) | Int(data[offset + 1]) << 8 }

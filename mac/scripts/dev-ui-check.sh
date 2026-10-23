@@ -76,6 +76,14 @@ RUN_LIBRARY="$COPY/Games" run library --ui-check "$PWD/$OUT/library" --library-c
 echo "Library Check after a relaunch:"
 RUN_LIBRARY="$COPY/Games" run library-relaunch --ui-check "$PWD/$OUT/library-relaunch" --library-check-relaunch
 rm -rf "$COPY"
+# A large library: a copy of the test library with 3,000 more NES games.
+echo "Large library:"
+fresh
+COPY="$(mktemp -d)"
+cp -R "$LIBRARY" "$COPY/Games"
+for i in $(seq -w 0 2999); do echo "game $i" > "$COPY/Games/NES/Large Game $i (USA).nes"; done
+RUN_LIBRARY="$COPY/Games" run large --ui-check "$PWD/$OUT/large-library" --large-library-check
+rm -rf "$COPY"
 # A real game: the test pattern in RetroArch for about 12 seconds (skipped without RetroArch and Mesen).
 echo "Play time:"
 fresh
