@@ -280,7 +280,8 @@ private struct GameGridView: View {
             if !library.check.news.isEmpty {
                 LibraryBanner(news: library.check.news)
             }
-            GridHeader(item: item, count: library.games(for: item).count, shown: search.isEmpty ? nil : games.count)
+            GridHeader(item: item, count: library.games(for: item).count, shown: search.isEmpty ? nil : games.count,
+                       playedInAll: item == .recent ? Playtime.total(library.playtime) : 0)
             if games.isEmpty {
                 emptyState
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -306,7 +307,7 @@ private struct GameGridView: View {
                               spacing: Self.spacing) {
                         ForEach(games) { game in
                             GameCard(game: game, isSelected: game.id == selectedID, isFocused: gridFocused,
-                                     isFavorite: library.isFavorite(game), showsSystem: !isSystemList,
+                                     isFavorite: library.isFavorite(game), showsSystem: !isSystemList, played: library.playtime(game),
                                      onPlay: { play(game) })
                                 .id(game.id)
                                 .onTapGesture(count: 2) { play(game) }
@@ -416,6 +417,8 @@ private struct GridHeader: View {
     let count: Int
     /// How many games match the search, while searching.
     let shown: Int?
+    /// On Recently Played: the time played across every game.
+    let playedInAll: Int
 
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
@@ -428,6 +431,9 @@ private struct GridHeader: View {
                         .foregroundStyle(.secondary)
                     if case .system(let system) = item {
                         SystemStatus(system: system)
+                    }
+                    if playedInAll >= 60 {
+                        Text("\(Playtime.format(playedInAll)) played in all").foregroundStyle(.secondary)
                     }
                 }
             }
@@ -556,6 +562,8 @@ private struct GameCard: View {
     let isFocused: Bool
     let isFavorite: Bool
     let showsSystem: Bool
+    /// Seconds played, shown from a minute up.
+    let played: Int
     let onPlay: () -> Void
     @State private var isHovering = false
 
@@ -600,8 +608,9 @@ private struct GameCard: View {
                     .font(.callout.weight(.medium))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
-                if showsSystem {
-                    Text(game.system.displayName)
+                let detail = [showsSystem ? game.system.displayName : nil, played >= 60 ? Playtime.format(played) : nil].compactMap { $0 }
+                if !detail.isEmpty {
+                    Text(detail.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

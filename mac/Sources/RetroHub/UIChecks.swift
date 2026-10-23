@@ -12,7 +12,8 @@ import AppKit
 /// permission is needed), and the app quits with 0 if every check passed. `--rows-only` checks
 /// just the sidebar rows, for runs at other sidebar icon sizes; `--library-check` changes files in
 /// the games folder (a copy: dev-ui-check.sh makes one) and checks the Smart Game Scanner, and
-/// `--library-check-relaunch` what it kept; `--relaunch` checks that the
+/// `--library-check-relaunch` what it kept; `--playtime-check` plays the test pattern for about 12
+/// seconds in the real RetroArch (skipped if NES can't play here); `--relaunch` checks that the
 /// appearance the full run ended on (Dark) was kept.
 ///
 /// The steps expect fresh settings and the test library from scripts/make-test-library.swift.
@@ -34,6 +35,7 @@ enum UIChecks {
     private static var relaunch = false
     private static var libraryCheck = false
     private static var libraryCheckRelaunch = false
+    private static var playtimeCheck = false
     private static var window: NSWindow!
     private static var activity: NSObjectProtocol?
     /// The sidebar's scroll position before a step, to tell whether the step scrolled it.
@@ -50,6 +52,7 @@ enum UIChecks {
         relaunch = arguments.contains("--relaunch")
         libraryCheck = arguments.contains("--library-check")
         libraryCheckRelaunch = arguments.contains("--library-check-relaunch")
+        playtimeCheck = arguments.contains("--playtime-check")
         macAppearanceAtLaunch = macAppearance
         // App Nap would hold back the timers below while the window isn't in front.
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "RetroHub UI checks")
@@ -63,7 +66,10 @@ enum UIChecks {
             }
             window = main
             window.setContentSize(NSSize(width: 1100, height: 680))
-            if libraryCheck || libraryCheckRelaunch {
+            if playtimeCheck {
+                steps = playtimeSteps()
+                runNextStep()
+            } else if libraryCheck || libraryCheckRelaunch {
                 steps = libraryCheckRelaunch ? libraryCheckRelaunchSteps() : libraryCheckSteps()
                 runNextStep()
             } else if rowsOnly || relaunch {
@@ -97,7 +103,7 @@ enum UIChecks {
         let step = steps.removeFirst()
         stepNumber += 1
         print("- \(step.name)")
-        if !window.isKeyWindow && !rowsOnly && !relaunch && !libraryCheck && !libraryCheckRelaunch {
+        if !window.isKeyWindow && !rowsOnly && !relaunch && !libraryCheck && !libraryCheckRelaunch && !playtimeCheck {
             print("  (the window isn't active, so keyboard and menu checks may fail)")
         }
         sidebarOrigin = sidebar?.visibleRect.origin ?? .zero
@@ -171,6 +177,30 @@ enum UIChecks {
                 expect(favoriteNames == [renamedLegend], "Same game moves the favorite to the new name: \(favoriteNames)")
                 expect(library?.check.summary.missing.isEmpty == true, "Remove forgets the missing game")
                 expect(window.title == "NES" && library?.check.news == "", "Done goes back to NES, and the banner is gone: \(window.title)")
+            }),
+        ]
+    }
+
+    /// A real session: the test pattern plays in RetroArch for about 12 seconds, then RetroArch is
+    /// closed and the session's time must be recorded once.
+    private static func playtimeSteps() -> [Step] {
+        let pattern = { library?.games[.nes]?.first { $0.bootURL.lastPathComponent == "RetroHub Test Pattern.nes" } }
+        guard Launcher.readiness(for: .nes).ready, pattern() != nil else {
+            print("  (skipped: NES can't play on this Mac, or the test pattern isn't in the library)")
+            return []
+        }
+        return [
+            Step(name: "play the test pattern", wait: 12, action: {
+                if let library, let game = pattern() { library.play(game) }
+            }, check: {
+                expect(library?.session?.process.isRunning == true, "the emulator is running")
+                expect(library.map { $0.playtime(pattern()!) } == 0, "nothing is recorded while it runs")
+            }),
+            Step(name: "close the emulator", wait: 3, action: { library?.session?.process.terminate() }, check: {
+                expect(library?.session == nil, "RetroHub saw it close")
+                let record = library?.playtime[pattern()!.bootURL.path]
+                expect(record?.sessions == 1 && (11...16).contains(record?.seconds ?? 0),
+                       "the session's time is recorded once: \(record.map { "\($0.seconds) s, \($0.sessions) session" } ?? "nothing")")
             }),
         ]
     }

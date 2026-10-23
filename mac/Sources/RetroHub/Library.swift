@@ -99,6 +99,7 @@ final class Library: ObservableObject {
     private static let rootKey = "libraryRoot"
     private static let favoritesKey = "favorites"
     private static let lastPlayedKey = "lastPlayed"
+    private static let playtimeKey = "playtime"
     private static let recentLimit = 24
     /// The bundle ID RetroHub used to have; its settings are copied over once.
     private static let legacyDomain = "local.retrohub"
@@ -109,6 +110,9 @@ final class Library: ObservableObject {
     @Published private(set) var games: [GameSystem: [Game]] = [:]
     @Published private(set) var favorites: Set<String>
     @Published private(set) var lastPlayed: [String: Date]
+    /// Time played per game path (Playtime.swift).
+    @Published private(set) var playtime: [String: Playtime] = [:]
+    private var terminationObserver: NSObjectProtocol?
     @Published var launchError: String?
     /// The game RetroHub started, while its emulator runs. Not set for OpenEmu, which macOS opens
     /// and which stays open after the game.
@@ -139,12 +143,24 @@ final class Library: ObservableObject {
         }
         favorites = Set(defaults.stringArray(forKey: Self.favoritesKey) ?? [])
         lastPlayed = defaults.dictionary(forKey: Self.lastPlayedKey) as? [String: Date] ?? [:]
+        if let data = defaults.data(forKey: Self.playtimeKey), let saved = try? JSONDecoder().decode([String: Playtime].self, from: data) {
+            playtime = saved
+        }
         if let data = try? Data(contentsOf: Self.scannerFile), let saved = try? JSONDecoder().decode(ScannerState.self, from: data) {
             scanner = saved
             savedScanner = data
         }
         createFolders()
         rescan()
+        // Quitting RetroHub mid-game keeps the time played so far (the emulator keeps running).
+        terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                                                     object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let session = self.session else { return }
+                self.recordPlaytime(session)
+                self.session = nil
+            }
+        }
     }
 
     /// Development copies (RetroHub Dev, RetroHub Dev Check) keep their own settings: given the old
@@ -250,6 +266,7 @@ final class Library: ObservableObject {
         guard scanner.index?[from]?.missingSince != nil, let target = scanner.index?[to], target.missingSince == nil else { return }
         if favorites.remove(from) != nil { favorites.insert(to) }
         if let played = lastPlayed.removeValue(forKey: from) { lastPlayed[to] = max(lastPlayed[to] ?? played, played) }
+        playtime = Playtime.moving(playtime, from: from, to: to)
         scanner.index?[from] = nil
         saveGameState()
     }
@@ -268,6 +285,7 @@ final class Library: ObservableObject {
             scanner.index?[path] = nil
             favorites.remove(path)
             lastPlayed[path] = nil
+            playtime[path] = nil
         }
         saveGameState()
     }
@@ -293,6 +311,7 @@ final class Library: ObservableObject {
     private func saveGameState() {
         UserDefaults.standard.set(Array(favorites), forKey: Self.favoritesKey)
         UserDefaults.standard.set(lastPlayed, forKey: Self.lastPlayedKey)
+        savePlaytime()
         saveScanner()
         refreshCheck()
     }
@@ -350,10 +369,24 @@ final class Library: ObservableObject {
     /// RetroHub comes back to the front when the game is closed, including from another Space
     /// while couch mode is full screen. macOS doesn't allow it if you've moved on to another app.
     private func ended(_ process: Process) {
-        guard session?.process === process else { return }
-        session = nil
+        guard let session, session.process === process else { return }
+        recordPlaytime(session)
+        self.session = nil
         NSApp.activate()
     }
+
+    /// Adds a session's time to its game's play time (sessions under 10 seconds don't count).
+    private func recordPlaytime(_ session: GameSession) {
+        playtime = Playtime.adding(playtime, session.game.key, seconds: Date.now.timeIntervalSince(session.started))
+        savePlaytime()
+    }
+
+    private func savePlaytime() {
+        UserDefaults.standard.set(try? JSONEncoder().encode(playtime), forKey: Self.playtimeKey)
+    }
+
+    func playtime(_ game: Game) -> Int { playtime[game.key]?.seconds ?? 0 }
+    func playtime(path: String) -> Int { playtime[path]?.seconds ?? 0 }
 
     static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
         let games = switch system {

@@ -76,6 +76,10 @@ RUN_LIBRARY="$COPY/Games" run library --ui-check "$PWD/$OUT/library" --library-c
 echo "Library Check after a relaunch:"
 RUN_LIBRARY="$COPY/Games" run library-relaunch --ui-check "$PWD/$OUT/library-relaunch" --library-check-relaunch
 rm -rf "$COPY"
+# A real game: the test pattern in RetroArch for about 12 seconds (skipped without RetroArch and Mesen).
+echo "Play time:"
+fresh
+run playtime --ui-check "$PWD/$OUT/playtime" --playtime-check
 fresh
 
 echo "Pictures of each step: mac/$OUT"

@@ -25,7 +25,7 @@ enum SelfTests {
         for (name, section) in [("titles", titles), ("PARAM.SFO", { sfo(in: tmp.appending(path: "sfo")) }),
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
                                 ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
-                                ("cover art", coverArt), ("old settings", legacySettings), ("library scanner", scanner),
+                                ("cover art", coverArt), ("old settings", legacySettings), ("library scanner", scanner), ("play time", playtime),
                                 ("appearance", appearance), ("game process", gameProcess),
                                 ("controller diagnostics", controllerDiagnostics), ("compatibility", compatibility)] {
             print("- \(name)")
@@ -190,6 +190,23 @@ enum SelfTests {
             expect(CoverArt.result(status: status, data: Data()), .offline, "\(status) is retried later")
         }
         expect(CoverArt.result(status: nil, data: Data()), .offline, "no HTTP status is retried later")
+    }
+
+    /// Play time (Playtime.swift), the same cases as desktop/test/playtime.test.js.
+    private static func playtime() {
+        let once = Playtime.adding([:], "/g/a.nes", seconds: 125.4)
+        expect(once, ["/g/a.nes": Playtime(seconds: 125, sessions: 1)], "a session adds its time and counts once")
+        expect(Playtime.adding(once, "/g/a.nes", seconds: 60), ["/g/a.nes": Playtime(seconds: 185, sessions: 2)], "and the next adds to it")
+        expect(Playtime.adding([:], "/g/a.nes", seconds: 9.9), [:], "a session under 10 seconds doesn't count")
+        let before = ["/g/a.nes": Playtime(seconds: 100, sessions: 2), "/g/b.nes": Playtime(seconds: 50, sessions: 1)]
+        expect(Playtime.moving(before, from: "/g/a.nes", to: "/g/b.nes"), ["/g/b.nes": Playtime(seconds: 150, sessions: 3)],
+               "a renamed game takes its play time along")
+        expect(Playtime.moving(before, from: "/g/none.nes", to: "/g/b.nes"), before, "nothing to move")
+        expect(Playtime.total(before), 150, "the total")
+        for (seconds, text) in [(59, "under a minute"), (60, "1 min"), (59 * 60, "59 min"), (3600, "1 h"),
+                                (3 * 3600 + 12 * 60 + 30, "3 h 12 min"), (40 * 3600 + 25 * 60, "40 h")] {
+            expect(Playtime.format(seconds), text, "\(seconds) seconds")
+        }
     }
 
     /// The Smart Game Scanner's rules (Scanner.swift), the same cases as desktop/test/scanner.test.js.

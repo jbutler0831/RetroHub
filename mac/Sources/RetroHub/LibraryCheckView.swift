@@ -105,6 +105,7 @@ struct LibraryCheckView: View {
         var parts: [String] = []
         if library.isFavorite(path: path) { parts.append("favorite") }
         if let played = library.lastPlayed(path: path) { parts.append("played \(played.formatted(.relative(presentation: .named)))") }
+        if library.playtime(path: path) >= 60 { parts.append("\(Playtime.format(library.playtime(path: path))) of play") }
         return parts.isEmpty ? "no favorite or play history" : parts.joined(separator: " · ")
     }
 

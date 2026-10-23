@@ -155,7 +155,7 @@ struct CouchView: View {
             }
             Text(([game.system.displayName] + [library.lastPlayed(game).map {
                 "Last played " + $0.formatted(.relative(presentation: .named))
-            }].compactMap { $0 }).joined(separator: "  ·  "))
+            }, library.playtime(game) >= 60 ? "Played \(Playtime.format(library.playtime(game)))" : nil].compactMap { $0 }).joined(separator: "  ·  "))
                 .font(.title3)
                 .opacity(0.7)
         }
