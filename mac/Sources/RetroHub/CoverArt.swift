@@ -4,12 +4,14 @@ import CoreImage
 /// Finds box art for a game: a local image next to the game first, then the
 /// libretro-thumbnails library, cached on disk.
 enum CoverArt {
+    /// Named after the app, so a development build ("RetroHub Dev") keeps its own cache.
     private static let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appending(path: "RetroHub/Covers")
+        .appending(path: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "RetroHub")
+        .appending(path: "Covers")
     private static let server = URL(string: "https://thumbnails.libretro.com")!
     private static let regions = ["USA", "World", "USA, Europe", "Europe", "Japan"]
 
-    private enum Fetch { case found(Data), missing, offline }
+    enum Fetch: Equatable { case found(Data), missing, offline }
 
     static func data(for game: Game) async -> Data? {
         let fm = FileManager.default
@@ -68,7 +70,17 @@ enum CoverArt {
 
     private static func fetch(_ url: URL) async -> Fetch {
         guard let (data, response) = try? await URLSession.shared.data(from: url) else { return .offline }
-        return (response as? HTTPURLResponse)?.statusCode == 200 ? .found(data) : .missing
+        return result(status: (response as? HTTPURLResponse)?.statusCode, data: data)
+    }
+
+    /// Only a 404 means there's no art under that name. Anything else that isn't a 200 (rate
+    /// limiting, a server outage) is treated like being offline, so the miss isn't remembered.
+    static func result(status: Int?, data: Data) -> Fetch {
+        switch status {
+        case 200: .found(data)
+        case 404: .missing
+        default: .offline
+        }
     }
 }
 

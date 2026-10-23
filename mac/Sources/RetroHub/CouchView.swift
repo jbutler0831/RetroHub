@@ -7,6 +7,8 @@ struct CouchView: View {
     let item: SidebarItem
     /// The tabs across the top; only lists that have games.
     let items: [SidebarItem]
+    /// The game last picked in each list, shared with the browser.
+    @Binding var pickedGames: [SidebarItem: Game.ID]
     let onSelect: (SidebarItem) -> Void
     let onCycle: (Int) -> Void
     let onExit: () -> Void
@@ -19,6 +21,10 @@ struct CouchView: View {
 
     private var current: Game? {
         games.indices.contains(index) ? games[index] : nil
+    }
+
+    private var pickedIndex: Int {
+        pickedGames[item].flatMap { id in games.firstIndex { $0.id == id } } ?? 0
     }
 
     var body: some View {
@@ -61,8 +67,16 @@ struct CouchView: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
-        .onAppear { focused = true }
-        .onChange(of: item) { index = 0 }
+        .onAppear {
+            focused = true
+            index = pickedIndex
+        }
+        .onChange(of: item) { index = pickedIndex }
+        // Watches index rather than current: right after a change of list, current briefly
+        // points at the old position in the new list.
+        .onChange(of: index) {
+            if let id = current?.id { pickedGames[item] = id }
+        }
         .onChange(of: games.count) { _, count in index = min(index, max(0, count - 1)) }
         .onReceive(controller.commands, perform: handle)
         .onKeyPress(.leftArrow) { handle(.move(dx: -1, dy: 0)); return .handled }

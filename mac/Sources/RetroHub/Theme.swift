@@ -81,6 +81,59 @@ extension Emulator {
     }
 }
 
+/// Light, Dark, or whatever System Settings › Appearance says. It changes RetroHub's own windows,
+/// menus and alerts only; the Mac's setting is left alone. Saved per bundle ID, so RetroHub Dev
+/// keeps its own choice.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    static let key = "appearance"
+
+    static var saved: AppAppearance {
+        AppAppearance(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .system
+    }
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: "Follow System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    /// For NSApp.appearance; nil follows the system.
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
+extension NSColor {
+    /// This color for text and symbols. macOS's orange and green measure about 2:1 against a light
+    /// window, and the sidebar badge's orange 4.4:1 on its own tint in Dark mode, so they're
+    /// darkened in Light mode and lightened in Dark mode, to 5:1 or more. SelfTests checks the
+    /// colors; the window checks measure the badge as drawn.
+    var readable: NSColor {
+        NSColor(name: nil) { appearance in
+            var color = self
+            appearance.performAsCurrentDrawingAppearance { color = self.usingColorSpace(.sRGB) ?? self }
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return color.blended(withFraction: dark ? 0.35 : 0.6, of: dark ? .white : .black) ?? color
+        }
+    }
+}
+
+extension Color {
+    /// "Setup needed" orange and "ready" green, readable as text in Light and Dark mode.
+    static let warning = Color(nsColor: NSColor.systemOrange.readable)
+    static let success = Color(nsColor: NSColor.systemGreen.readable)
+}
+
 /// A rounded, colored square with a white symbol, like System Settings icons.
 struct IconTile: View {
     let symbol: String
@@ -99,18 +152,18 @@ struct IconTile: View {
     }
 }
 
-/// A capsule label used for status.
+/// A capsule label used for status: readable text on a light tint of the color.
 struct StatusPill: View {
     let text: String
     let symbol: String
-    let color: Color
+    let color: NSColor
 
     var body: some View {
         Label(text, systemImage: symbol)
             .font(.callout.weight(.medium))
-            .foregroundStyle(color)
+            .foregroundStyle(Color(nsColor: color.readable))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(color.opacity(0.14), in: Capsule())
+            .background(Color(nsColor: color).opacity(0.14), in: Capsule())
     }
 }

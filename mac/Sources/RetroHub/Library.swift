@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 struct Game: Identifiable, Hashable {
     let system: GameSystem
@@ -34,8 +34,20 @@ enum SidebarItem: Hashable {
     case favorites, recent, setup
     case system(GameSystem)
 
-    /// The game lists, in the order the controller cycles through them.
-    static let all: [SidebarItem] = [.favorites, .recent] + GameSystem.allCases.map(SidebarItem.system)
+    /// The sidebar, top to bottom: the lists and Setup, then each maker's systems under its name.
+    static let sections: [(title: String?, items: [SidebarItem])] = [(nil, [.favorites, .recent, .setup])]
+        + GameSystem.makers.map { maker in (maker, GameSystem.allCases.filter { $0.maker == maker }.map(SidebarItem.system)) }
+
+    /// The game lists in sidebar order: what LB/RB and Next/Previous System step through.
+    static let all: [SidebarItem] = sections.flatMap(\.items).filter { $0 != .setup }
+
+    /// The item `step` places away in `items`, wrapping around at either end. From an item that
+    /// isn't in `items`, such as Setup, a step forward lands on the first item and back on the last.
+    static func stepping(from item: SidebarItem, by step: Int, in items: [SidebarItem]) -> SidebarItem? {
+        guard !items.isEmpty else { return nil }
+        let current = items.firstIndex(of: item) ?? (step > 0 ? -1 : 0)
+        return items[((current + step) % items.count + items.count) % items.count]
+    }
 
     var title: String {
         switch self {
@@ -56,6 +68,13 @@ enum SidebarItem: Hashable {
     }
 }
 
+/// A game started from RetroHub, and its emulator's process.
+struct GameSession {
+    let game: Game
+    let process: Process
+    let started: Date
+}
+
 @MainActor
 final class Library: ObservableObject {
     private static let rootKey = "libraryRoot"
@@ -70,6 +89,9 @@ final class Library: ObservableObject {
     @Published private(set) var favorites: Set<String>
     @Published private(set) var lastPlayed: [String: Date]
     @Published var launchError: String?
+    /// The game RetroHub started, while its emulator runs. Not set for OpenEmu, which macOS opens
+    /// and which stays open after the game.
+    @Published private(set) var session: GameSession?
 
     init() {
         let defaults = UserDefaults.standard
@@ -152,8 +174,19 @@ final class Library: ObservableObject {
     }
 
     func play(_ game: Game) {
+        // One game at a time: A pressed again while the emulator starts, or while it's open behind
+        // RetroHub, brings it forward instead of starting a second copy.
+        if let session, session.process.isRunning {
+            NSRunningApplication(processIdentifier: session.process.processIdentifier)?.activate()
+            return
+        }
         do {
-            try Launcher.launch(game)
+            let process = try Launcher.launch(game) { process in
+                DispatchQueue.main.async { MainActor.assumeIsolated { self.ended(process) } }
+            }
+            if let process, process.isRunning {
+                session = GameSession(game: game, process: process, started: .now)
+            }
             lastPlayed[game.key] = .now
             UserDefaults.standard.set(lastPlayed, forKey: Self.lastPlayedKey)
         } catch {
@@ -161,7 +194,15 @@ final class Library: ObservableObject {
         }
     }
 
-    private static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
+    /// RetroHub comes back to the front when the game is closed, including from another Space
+    /// while couch mode is full screen. macOS doesn't allow it if you've moved on to another app.
+    private func ended(_ process: Process) {
+        guard session?.process === process else { return }
+        session = nil
+        NSApp.activate()
+    }
+
+    static func scan(_ system: GameSystem, in folder: URL) -> [Game] {
         let games = switch system {
         case .ps3: scanPS3(folder)
         case .ps4: scanPS4(folder)
@@ -236,9 +277,10 @@ final class Library: ObservableObject {
         let keyTable = u32(8), dataTable = u32(12), count = u32(16)
         for index in 0..<count {
             let entry = 20 + index * 16
+            // Checked before reading the entry: a damaged file can claim more entries than it holds.
+            guard entry + 16 <= data.count else { return nil }
             let keyStart = keyTable + u16(entry)
-            guard entry + 16 <= data.count, keyStart < data.count,
-                  let keyEnd = data[keyStart...].firstIndex(of: 0) else { return nil }
+            guard keyStart < data.count, let keyEnd = data[keyStart...].firstIndex(of: 0) else { return nil }
             guard String(decoding: data[keyStart..<keyEnd], as: UTF8.self) == "TITLE" else { continue }
 
             let start = dataTable + u32(entry + 12), length = u32(entry + 4)
