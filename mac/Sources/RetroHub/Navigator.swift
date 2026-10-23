@@ -11,6 +11,8 @@ final class Navigator: ObservableObject {
     /// The game last picked in each list, in the browser or couch mode, so going back to a list
     /// lands on it again.
     @Published var pickedGames: [SidebarItem: Game.ID] = [:]
+    /// The list shown before Library Check, where its Done button goes back to.
+    private var beforeCheck: SidebarItem?
 
     /// Couch mode only shows lists with games in them, so the controller never lands on a blank screen.
     func couchItems(_ library: Library) -> [SidebarItem] {
@@ -20,7 +22,13 @@ final class Navigator: ObservableObject {
     /// Shows a list, or Setup, in the browser.
     func show(_ item: SidebarItem, library: Library) {
         if couchMode { setCouchMode(false, library: library) }
+        if item == .check, selection != .check { beforeCheck = selection }
         selection = item
+    }
+
+    /// Back from Library Check to the list shown before it.
+    func leaveCheck(library: Library) {
+        show(beforeCheck ?? .system(.nes), library: library)
     }
 
     /// The next (1) or previous (-1) list: RB and LB, ⌘] and ⌘[.

@@ -30,6 +30,7 @@ status=0
 fresh() {
     defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
     rm -rf ~/Library/"Saved Application State/$BUNDLE_ID.savedState"
+    rm -f ~/Library/"Application Support/$NAME/library.json"
 }
 # -libraryRoot and the other arguments apply to this run only. Opened with `open` so macOS brings
 # the window to the front: keyboard focus and menu commands only behave normally in the active
@@ -39,7 +40,7 @@ run() {
     local log="$PWD/$OUT/$name.log"
     mkdir -p "$OUT"
     : > "$log"
-    open -W -n --stdout "$log" --stderr "$log" "$APP" --args -libraryRoot "$LIBRARY" "$@" &
+    open -W -n --stdout "$log" --stderr "$log" "$APP" --args -libraryRoot "${RUN_LIBRARY:-$LIBRARY}" "$@" &
     local opener=$!
     local waited=0
     while kill -0 "$opener" 2>/dev/null; do
@@ -66,6 +67,15 @@ run small -NSTableViewDefaultSizeMode 1 --ui-check "$PWD/$OUT/small" --rows-only
 echo "Sidebar icon size Large:"
 fresh
 run large -NSTableViewDefaultSizeMode 3 --ui-check "$PWD/$OUT/large" --rows-only
+# The Smart Game Scanner changes files, so it gets a copy of the test library.
+echo "Library Check:"
+fresh
+COPY="$(mktemp -d)"
+cp -R "$LIBRARY" "$COPY/Games"
+RUN_LIBRARY="$COPY/Games" run library --ui-check "$PWD/$OUT/library" --library-check
+echo "Library Check after a relaunch:"
+RUN_LIBRARY="$COPY/Games" run library-relaunch --ui-check "$PWD/$OUT/library-relaunch" --library-check-relaunch
+rm -rf "$COPY"
 fresh
 
 echo "Pictures of each step: mac/$OUT"

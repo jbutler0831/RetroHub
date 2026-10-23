@@ -13,14 +13,30 @@ enum CoverArt {
 
     enum Fetch: Equatable { case found(Data), missing, offline }
 
+    /// Where a game's downloaded cover is kept, and the marker left when none was found.
+    private static func cacheFiles(_ game: Game) -> (cached: URL, missMarker: URL) {
+        let cached = cacheDir.appending(path: game.system.rawValue).appending(path: sanitize(game.title) + ".png")
+        return (cached, cached.appendingPathExtension("none"))
+    }
+
+    /// Whether RetroHub looked for this game's cover and found none (and there's no local image).
+    static func knownMissing(_ game: Game) -> Bool {
+        let fm = FileManager.default
+        return !game.localCovers.contains { fm.fileExists(atPath: $0.path) } && fm.fileExists(atPath: cacheFiles(game).missMarker.path)
+    }
+
+    /// Forgets that no cover was found, so the next look tries the server again.
+    static func forgetMiss(_ game: Game) {
+        try? FileManager.default.removeItem(at: cacheFiles(game).missMarker)
+    }
+
     static func data(for game: Game) async -> Data? {
         let fm = FileManager.default
         if let local = game.localCovers.first(where: { fm.fileExists(atPath: $0.path) }) {
             return try? Data(contentsOf: local)
         }
 
-        let cached = cacheDir.appending(path: game.system.rawValue).appending(path: sanitize(game.title) + ".png")
-        let missMarker = cached.appendingPathExtension("none")
+        let (cached, missMarker) = cacheFiles(game)
         if fm.fileExists(atPath: cached.path) { return try? Data(contentsOf: cached) }
         if fm.fileExists(atPath: missMarker.path) { return nil }
         try? fm.createDirectory(at: cached.deletingLastPathComponent(), withIntermediateDirectories: true)

@@ -97,6 +97,8 @@ struct ContentView: View {
             switch navigator.selection {
             case .setup:
                 SetupView()
+            case .check:
+                LibraryCheckView()
             case let item?:
                 GameGridView(item: item, search: search, pickedGame: pickedGame(for: item), focus: $focus)
                     .id(item)
@@ -176,6 +178,7 @@ private struct SidebarRow: View {
     private func help(_ readiness: Launcher.Readiness?) -> String {
         switch item {
         case .setup: return "Emulators, games folder, graphics, controller and BIOS files"
+        case .check: return "New, moved, missing and duplicate games"
         case .favorites, .recent: return "\(item.title): \(gamesText)"
         case .system(let system):
             guard let readiness else { return "\(system.displayName): no games yet" }
@@ -274,6 +277,9 @@ private struct GameGridView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !library.check.news.isEmpty {
+                LibraryBanner(news: library.check.news)
+            }
             GridHeader(item: item, count: library.games(for: item).count, shown: search.isEmpty ? nil : games.count)
             if games.isEmpty {
                 emptyState
@@ -398,7 +404,7 @@ private struct GameGridView: View {
                                    message: "The games you play will show up here so you can jump right back in.")
             case .system(let system):
                 SystemEmptyState(system: system)
-            case .setup:
+            case .setup, .check:
                 EmptyView()
             }
         }

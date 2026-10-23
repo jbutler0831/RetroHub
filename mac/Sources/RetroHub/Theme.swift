@@ -57,6 +57,7 @@ extension SidebarItem {
         case .favorites: .yellow
         case .recent: .orange
         case .setup: .gray
+        case .check: .indigo
         case .system(let system): system.color
         }
     }

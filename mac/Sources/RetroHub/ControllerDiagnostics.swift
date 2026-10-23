@@ -34,8 +34,9 @@ final class ControllerDiagnostics: ObservableObject {
     @Published private(set) var controllers: [String] = []
 
     private var controller: ControllerInput?
-    private var navigator: Navigator?
-    private var library: Library?
+    // Read by UIChecks.swift too.
+    private(set) var navigator: Navigator?
+    private(set) var library: Library?
     private var recording = false
     private var subscriptions: Set<AnyCancellable> = []
     /// Directions held on each d-pad or stick, to report only when they change.

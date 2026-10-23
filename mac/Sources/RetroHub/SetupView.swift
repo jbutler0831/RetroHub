@@ -4,6 +4,7 @@ import SwiftUI
 struct SetupView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var controller: ControllerInput
+    @EnvironmentObject private var navigator: Navigator
     @AppStorage(AppAppearance.key) private var appearance = AppAppearance.system
 
     private var installedCount: Int {
@@ -32,6 +33,17 @@ struct SetupView: View {
                             Spacer()
                             Button("Open") { NSWorkspace.shared.open(library.root) }
                             Button("Change…", action: chooseRoot)
+                        }
+                    }
+                }
+
+                section("Library", subtitle: "RetroHub notices new, moved, renamed, missing and duplicate games each time it scans, and asks before changing anything.") {
+                    card {
+                        HStack(spacing: 14) {
+                            IconTile(symbol: SidebarItem.check.symbol, color: SidebarItem.check.color, size: 36)
+                            Text(library.check.news.isEmpty ? "No changes since you last checked." : library.check.news)
+                            Spacer()
+                            Button("Check Library…") { navigator.show(.check, library: library) }
                         }
                     }
                 }

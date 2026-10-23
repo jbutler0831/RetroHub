@@ -31,7 +31,8 @@ extension String {
 }
 
 enum SidebarItem: Hashable {
-    case favorites, recent, setup
+    /// `check` is Library Check, shown from the banner and Setup; it isn't a sidebar row.
+    case favorites, recent, setup, check
     case system(GameSystem)
 
     /// The sidebar, top to bottom: the lists and Setup, then each maker's systems under its name.
@@ -54,6 +55,7 @@ enum SidebarItem: Hashable {
         case .favorites: "Favorites"
         case .recent: "Recently Played"
         case .setup: "Setup"
+        case .check: "Library Check"
         case .system(let system): system.displayName
         }
     }
@@ -63,8 +65,25 @@ enum SidebarItem: Hashable {
         case .favorites: "star.fill"
         case .recent: "clock.fill"
         case .setup: "wrench.and.screwdriver.fill"
+        case .check: "arrow.triangle.2.circlepath"
         case .system(let system): system.symbol
         }
+    }
+}
+
+/// What Library Check shows: the scanner's summary (Scanner.swift) and the games whose cover
+/// was looked up and not found.
+struct LibraryCheck {
+    var summary = Scanner.Summary()
+    var noArt: [Game] = []
+    /// News since the last review, for the banner. Games still missing from before (an unplugged
+    /// drive, say) stay listed without bringing the banner back.
+    var newCount = 0, renamedCount = 0, newlyMissingCount = 0
+
+    /// "2 new · 1 moved or renamed · 1 missing", or "" when nothing changed since the last review.
+    var news: String {
+        [newCount > 0 ? "\(newCount) new" : nil, renamedCount > 0 ? "\(renamedCount) moved or renamed" : nil,
+         newlyMissingCount > 0 ? "\(newlyMissingCount) missing" : nil].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -94,6 +113,21 @@ final class Library: ObservableObject {
     /// The game RetroHub started, while its emulator runs. Not set for OpenEmu, which macOS opens
     /// and which stays open after the game.
     @Published private(set) var session: GameSession?
+    /// What the Smart Game Scanner found, for the banner and Library Check.
+    @Published private(set) var check = LibraryCheck()
+
+    /// What the scanner has seen and when the changes were last reviewed, in Application Support,
+    /// named after the app like the cover cache, so RetroHub Dev keeps its own.
+    private struct ScannerState: Codable {
+        var index: Scanner.Index?
+        var reviewedAt: Double = 0
+    }
+    private static let scannerFile = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appending(path: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "RetroHub")
+        .appending(path: "library.json")
+    private var scanner = ScannerState()
+    private var savedScanner: Data?
+    private var fingerprinting = false
 
     init() {
         let defaults = UserDefaults.standard
@@ -105,6 +139,10 @@ final class Library: ObservableObject {
         }
         favorites = Set(defaults.stringArray(forKey: Self.favoritesKey) ?? [])
         lastPlayed = defaults.dictionary(forKey: Self.lastPlayedKey) as? [String: Date] ?? [:]
+        if let data = try? Data(contentsOf: Self.scannerFile), let saved = try? JSONDecoder().decode(ScannerState.self, from: data) {
+            scanner = saved
+            savedScanner = data
+        }
         createFolders()
         rescan()
     }
@@ -150,13 +188,120 @@ final class Library: ObservableObject {
         games = Dictionary(uniqueKeysWithValues: GameSystem.allCases.map { system in
             (system, Self.scan(system, in: folder(for: system)))
         })
+        let now = Date.now.timeIntervalSince1970 * 1000
+        // The first scan is the baseline: what's there already isn't news.
+        if scanner.index == nil { scanner.reviewedAt = now }
+        scanner.index = Scanner.updateIndex(scanner.index, games: GameSystem.allCases.flatMap { games[$0] ?? [] }, now: now)
+        saveScanner()
+        refreshCheck()
+        fingerprintInBackground()
+    }
+
+    // MARK: Smart Game Scanner
+
+    /// Saves the index; RetroHub rescans each time it comes forward, so only when it changed.
+    private func saveScanner() {
+        guard let data = try? JSONEncoder().encode(scanner), data != savedScanner else { return }
+        try? FileManager.default.createDirectory(at: Self.scannerFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: Self.scannerFile, options: .atomic)
+        savedScanner = data
+    }
+
+    private func refreshCheck() {
+        let summary = Scanner.summarize(scanner.index ?? [:], reviewedAt: scanner.reviewedAt)
+        check = LibraryCheck(summary: summary,
+                             noArt: GameSystem.allCases.flatMap { games[$0] ?? [] }.filter(CoverArt.knownMissing),
+                             newCount: summary.added.count, renamedCount: summary.renamed.count,
+                             newlyMissingCount: summary.missing.filter { $0.since > scanner.reviewedAt }.count)
+    }
+
+    /// Fingerprints new and changed files off the main thread after a scan, then updates Library Check.
+    private func fingerprintInBackground() {
+        guard !fingerprinting, let index = scanner.index else { return }
+        let paths = Scanner.needsFingerprint(index)
+        guard !paths.isEmpty else { return }
+        fingerprinting = true
+        Task.detached(priority: .utility) {
+            var found: [String: String] = [:]
+            for path in paths {
+                if let fp = try? Scanner.fingerprint(path) { found[path] = fp }
+            }
+            await self.fingerprinted(found, as: index)
+        }
+    }
+
+    private func fingerprinted(_ found: [String: String], as before: Scanner.Index) {
+        fingerprinting = false
+        for (path, fp) in found {
+            // Only if the file is still the one fingerprinted: a rescan may have replaced the entry.
+            guard let entry = scanner.index?[path], entry.size == before[path]?.size, entry.mtime == before[path]?.mtime else { continue }
+            scanner.index?[path]?.fp = fp
+        }
+        saveScanner()
+        refreshCheck()
+        fingerprintInBackground()
+    }
+
+    func isFavorite(path: String) -> Bool { favorites.contains(path) }
+    func lastPlayed(path: String) -> Date? { lastPlayed[path] }
+
+    /// Confirms a rename: the game's favorite and play history move to its new path.
+    func applyRename(from: String, to: String) {
+        guard scanner.index?[from]?.missingSince != nil, let target = scanner.index?[to], target.missingSince == nil else { return }
+        if favorites.remove(from) != nil { favorites.insert(to) }
+        if let played = lastPlayed.removeValue(forKey: from) { lastPlayed[to] = max(lastPlayed[to] ?? played, played) }
+        scanner.index?[from] = nil
+        saveGameState()
+    }
+
+    /// "Not the same game": the old one stays missing.
+    func notRenamed(from: String) {
+        guard scanner.index?[from]?.missingSince != nil else { return }
+        scanner.index?[from]?.notRenamed = true
+        saveScanner()
+        refreshCheck()
+    }
+
+    /// Forgets missing games: their index entries, favorites and play history.
+    func removeMissing(_ paths: [String]) {
+        for path in paths where scanner.index?[path]?.missingSince != nil {
+            scanner.index?[path] = nil
+            favorites.remove(path)
+            lastPlayed[path] = nil
+        }
+        saveGameState()
+    }
+
+    func markReviewed() {
+        scanner.reviewedAt = Date.now.timeIntervalSince1970 * 1000
+        saveScanner()
+        refreshCheck()
+    }
+
+    /// Looks for the covers that weren't found again, next time they're shown.
+    func lookAgainForCovers() {
+        check.noArt.forEach(CoverArt.forgetMiss)
+        refreshCheck()
+    }
+
+    /// Shows a file in the Finder: only one RetroHub knows about, such as a duplicate.
+    func showInFinder(path: String) {
+        guard let entry = scanner.index?[path], entry.missingSince == nil else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
+    }
+
+    private func saveGameState() {
+        UserDefaults.standard.set(Array(favorites), forKey: Self.favoritesKey)
+        UserDefaults.standard.set(lastPlayed, forKey: Self.lastPlayedKey)
+        saveScanner()
+        refreshCheck()
     }
 
     func games(for item: SidebarItem) -> [Game] {
         switch item {
         case .system(let system):
             return games[system] ?? []
-        case .setup:
+        case .setup, .check:
             return []
         case .favorites:
             return GameSystem.allCases.flatMap { games[$0] ?? [] }.filter { favorites.contains($0.key) }
