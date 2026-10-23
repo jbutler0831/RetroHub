@@ -29,7 +29,8 @@ module.exports = {
     await wait(400);
     await evaluate(`document.getElementById('content').focus()`);
     await key('Enter');
-    await wait(600);
+    // A stand-in program can take a few seconds to start on a fresh machine (.NET on Windows).
+    for (let i = 0; i < 50 && startsIn(dataDir) === 0; i++) await wait(100);
     check(startsIn(dataDir) === 1, `Return starts the game once: ${startsIn(dataDir)} start(s)`);
     log('- play again while it runs');
     await key('Enter');
