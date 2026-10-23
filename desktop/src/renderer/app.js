@@ -122,7 +122,7 @@ function cardHtml(game, showSystem) {
     <div class="cover" style="--c:${system.color}" data-cover="${esc(game.id)}">
       ${placeholder(game, system)}<img alt="" hidden>
       ${favorite ? `<span class="fav-badge">${I.star({ size: 12 })}</span>` : ''}
-      <button class="play-button" data-play title="Play">${I.play({ size: 22 })}</button>
+      <button class="play-button" data-play title="Play" aria-label="Play ${esc(game.displayTitle)}">${I.play({ size: 22 })}</button>
     </div>
     <div class="card-title">${esc(game.displayTitle)}</div>
     ${showSystem ? `<div class="card-sub">${esc(system.name)}</div>` : ''}
@@ -218,6 +218,7 @@ function renderContent() {
       </div>
       ${games.length ? `<div class="grid" id="grid">${games.map((g) => cardHtml(g, !system)).join('')}</div>` : emptyHtml(system)}`;
     loadCovers(content);
+    announce(games, selectedGame[selection]);
   }
   content.scrollTop = scroll;
 }
@@ -385,6 +386,7 @@ function updateCouch() {
   const { width, gap } = coverMetrics();
   carousel.style.transform = `translateX(${window.innerWidth / 2 - (couchIndex * (width + gap) + width / 2)}px)`;
 
+  announce(games, game.id);
   const system = systemById(game.system);
   const last = S.lastPlayed[game.id];
   $('couch-details').innerHTML = `<h2>${esc(game.displayTitle)}${S.favorites.includes(game.id) ? `<span class="star">${I.star({ size: 26 })}</span>` : ''}</h2>
@@ -432,6 +434,19 @@ function select(id, scroll = false) {
   const card = content.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
   card?.classList.add('selected');
   if (scroll) card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  announce(visibleGames(), id);
+}
+
+/**
+ * Tells screen readers which game is picked, such as "Contra, 2 of 5, favorite". Keyboard focus
+ * stays on the list as the pick moves, so without this nothing would be read out. Only changes
+ * are read, so redrawing the same list says nothing.
+ */
+function announce(games, id) {
+  const index = games.findIndex((g) => g.id === id);
+  const text = index < 0 ? '' : `${games[index].displayTitle}, ${index + 1} of ${games.length}${S.favorites.includes(id) ? ', favorite' : ''}`;
+  const el = $('announcer');
+  if (el.textContent !== text) el.textContent = text;
 }
 
 function gridColumns() {
