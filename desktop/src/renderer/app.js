@@ -375,8 +375,8 @@ function carriesText(item) {
 
 function renderCheck() {
   const c = S.libraryCheck;
-  const gameCell = (title, system, detail) =>
-    `${tile(`sys:${system}`)}<div class="grow"><strong>${esc(title)}</strong><span>${esc(detail)}</span></div>`;
+  const gameCell = (title, system, ...details) =>
+    `${tile(`sys:${system}`)}<div class="grow"><strong>${esc(title)}</strong>${details.map((d) => `<span>${esc(d)}</span>`).join('')}</div>`;
   const section = (title, subtitle, items, row, actions = '') => `<section>
       <div class="check-heading"><h3>${esc(title)} <span class="count">${items.length}</span></h3>${items.length ? actions : ''}</div>
       <p class="subtitle">${esc(subtitle)}</p>
@@ -389,7 +389,7 @@ function renderCheck() {
     </div>
     <div class="setup check">
       ${section('Moved or renamed', 'Files that turned up under a new name. Their favorite and play history move with them only when you confirm.',
-        c.renamed, (r) => `<div class="check-row">${gameCell(r.title, r.system, `${fileName(r.from)} → ${fileName(r.to)} · ${carriesText(r)}`)}
+        c.renamed, (r) => `<div class="check-row">${gameCell(r.title, r.system, `Now: ${fileName(r.to)} · ${carriesText(r)}`, `Was: ${fileName(r.from)}`)}
           <button class="button small primary" data-check="applyRename" data-from="${esc(r.from)}" data-to="${esc(r.to)}">Same game</button>
           <button class="button small" data-check="notRenamed" data-from="${esc(r.from)}">Not the same</button></div>`,
         '<button class="button small" data-check="applyAllRenames">Same game for all</button>')}

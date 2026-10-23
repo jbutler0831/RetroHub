@@ -37,7 +37,7 @@ module.exports = {
     const rows = (heading) => evaluate(`[...document.querySelectorAll('.check section')].find((s) => s.querySelector('h3').textContent.startsWith(${JSON.stringify(heading)}))
       .querySelectorAll('.check-row').length`);
     const text = () => evaluate(`document.querySelector('.check').textContent.replace(/\\s+/g, ' ')`);
-    check(await rows('Moved or renamed') === 1 && (await text()).includes('Legend of Placeholder, The (USA) [!].nes → Legend of Placeholder, The (USA) (Rev 1).nes · favorite'),
+    check(await rows('Moved or renamed') === 1 && /Now: Legend of Placeholder, The \(USA\) \(Rev 1\)\.nes · favorite\s*Was: Legend of Placeholder, The \(USA\) \[!\]\.nes/.test(await text()),
       'the rename is listed, with the favorite it carries');
     check(await rows('Missing') === 1 && (await text()).includes('UPPERCASE EXTENSION.SFC'), 'the missing SNES game is listed');
     check(await rows('New') === 2, 'the two new files are listed');
