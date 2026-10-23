@@ -4,7 +4,15 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { startProcess } = require('../src/emulators');
 
-const exitOf = (child) => new Promise((resolve) => child.once('exit', (code) => resolve(code)));
+// Emulators are started detached and unreferenced, so they don't hold RetroHub open. In the app,
+// Electron keeps running and hears the exit; here a timer keeps Node running until it does.
+const exitOf = (child) => new Promise((resolve) => {
+  const keepAlive = setInterval(() => {}, 1000);
+  child.once('exit', (code) => {
+    clearInterval(keepAlive);
+    resolve(code);
+  });
+});
 
 test('a running emulator is reported, then its end with its exit status', async () => {
   const child = await startProcess(process.execPath, ['-e', 'setTimeout(() => process.exit(0), 300)']);
