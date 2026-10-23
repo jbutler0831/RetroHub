@@ -408,20 +408,19 @@ enum UIChecks {
         let area = sidebar.convert(rect, to: frame)
         guard let picture = frame.bitmapImageRepForCachingDisplay(in: area) else { return expect(false, "no picture of the badge") }
         frame.cacheDisplay(in: area, to: picture)
+        // Every warm pixel is the badge: its tint is the most common one, and its text the one that
+        // stands out most from the tint. (The text was once told apart by being more orange, but
+        // in Dark mode it's pale enough on macOS 15 that no pixel was.)
         var tints: [NSColor: Int] = [:]
-        var marks: [NSColor] = []
         for x in 0..<picture.pixelsWide {
             for y in 0..<picture.pixelsHigh {
-                guard let pixel = picture.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
-                let warmth = pixel.redComponent - pixel.blueComponent
-                if warmth > 0.3 {
-                    marks.append(pixel)
-                } else if warmth > 0.06 {
-                    tints[pixel, default: 0] += 1
-                }
+                guard let pixel = picture.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                      pixel.redComponent - pixel.blueComponent > 0.06 else { continue }
+                tints[pixel, default: 0] += 1
             }
         }
-        guard let tint = tints.max(by: { $0.value < $1.value })?.key, !marks.isEmpty else {
+        let marks = Array(tints.keys)
+        guard let tint = tints.max(by: { $0.value < $1.value })?.key, marks.count > 1 else {
             return expect(false, "found the orange badge next to \(system.displayName)")
         }
         let ratio = marks.map { $0.contrast(with: tint) }.max() ?? 0

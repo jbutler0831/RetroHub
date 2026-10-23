@@ -329,15 +329,20 @@ enum SelfTests {
 
         // Status text needs 4.5:1 wherever it's drawn: on the window, on its own 14% tint in the
         // status pill, and (orange only) on an 18% tint in the sidebar's count badge. The sidebar's
-        // material, as drawn on macOS 14.4, is darker than the window in Light mode and lighter in Dark.
+        // material, as drawn on macOS 14.4 and 15.7, is darker than the window in Light mode and
+        // lighter in Dark (on 15, lighter still).
+        func rgb(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> NSColor {
+            NSColor(srgbRed: red / 255, green: green / 255, blue: blue / 255, alpha: 1)
+        }
         for name in [NSAppearance.Name.aqua, .darkAqua] {
-            let sidebar = name == .aqua ? NSColor(srgbRed: 227 / 255, green: 228 / 255, blue: 237 / 255, alpha: 1)
-                                        : NSColor(srgbRed: 56 / 255, green: 59 / 255, blue: 65 / 255, alpha: 1)
-            var window = sidebar
+            let sidebars = name == .aqua ? [(rgb(227, 228, 237), "macOS 14"), (rgb(233, 233, 233), "macOS 15")]
+                                         : [(rgb(56, 59, 65), "macOS 14"), (rgb(74, 74, 74), "macOS 15")]
+            var window = sidebars[0].0
             NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
                 window = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)!
             }
-            let places = [(window, 0.0, "window"), (window, 0.14, "pill"), (sidebar, 0.18, "badge")]
+            let places = [(window, 0.0, "window"), (window, 0.14, "pill")]
+                + sidebars.map { ($0.0, 0.18, "badge on \($0.1)") }
             for (color, colorName, drawnOn) in [(NSColor.systemOrange, "orange", places), (.systemGreen, "green", Array(places.prefix(2)))] {
                 var text = color, tint = color
                 NSAppearance(named: name)!.performAsCurrentDrawingAppearance {

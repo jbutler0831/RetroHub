@@ -116,14 +116,15 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 extension NSColor {
     /// This color for text and symbols. macOS's orange and green measure about 2:1 against a light
     /// window, and the sidebar badge's orange 4.4:1 on its own tint in Dark mode, so they're
-    /// darkened in Light mode and lightened in Dark mode, to 5:1 or more. SelfTests checks the
-    /// colors; the window checks measure the badge as drawn.
+    /// darkened in Light mode and lightened in Dark mode. The sidebar draws lighter in Dark mode on
+    /// macOS 15 than on 14, where 35% toward white measured 4.22:1, so it's 55%. SelfTests checks
+    /// the colors; the window checks measure the badge as drawn.
     var readable: NSColor {
         NSColor(name: nil) { appearance in
             var color = self
             appearance.performAsCurrentDrawingAppearance { color = self.usingColorSpace(.sRGB) ?? self }
             let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return color.blended(withFraction: dark ? 0.35 : 0.6, of: dark ? .white : .black) ?? color
+            return color.blended(withFraction: dark ? 0.55 : 0.65, of: dark ? .white : .black) ?? color
         }
     }
 }
