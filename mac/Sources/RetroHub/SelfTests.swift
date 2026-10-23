@@ -2,9 +2,9 @@
 import AppKit
 
 /// Checks for the parts of RetroHub that don't need a window: title cleanup, library scanning,
-/// PARAM.SFO parsing, RetroArch options, status color contrast, emulator processes and the
-/// compatibility inventory. The Command Line Tools don't include XCTest, so a debug build runs
-/// these itself:
+/// PARAM.SFO parsing, RetroArch options, status color contrast, emulator processes, Controller
+/// Diagnostics' clock and the compatibility inventory. The Command Line Tools don't include
+/// XCTest, so a debug build runs these itself:
 ///
 ///     swift build && "$(swift build --show-bin-path)/RetroHub" --self-test
 ///
@@ -26,7 +26,7 @@ enum SelfTests {
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
                                 ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
                                 ("cover art", coverArt), ("appearance", appearance), ("game process", gameProcess),
-                                ("compatibility", compatibility)] {
+                                ("controller diagnostics", controllerDiagnostics), ("compatibility", compatibility)] {
             print("- \(name)")
             section()
         }
@@ -208,6 +208,20 @@ enum SelfTests {
         expect(game?.isRunning, false, "and the process has ended")
         expect((try? Launcher.start(URL(filePath: "/nonexistent/emulator"), []) { _ in }) == nil, true,
                "a missing emulator is an error, not a silent failure")
+    }
+
+    /// Controller Diagnostics times are compared with notes taken during a hardware test, so they
+    /// must be 24-hour: a 12-hour clock without AM/PM logged 8:12 PM as 08:12.
+    private static func controllerDiagnostics() {
+        func at(_ hour: Int, _ minute: Int, _ second: Int, _ milliseconds: Int) -> Date {
+            Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 22, hour: hour, minute: minute,
+                                                       second: second, nanosecond: milliseconds * 1_000_000))!
+        }
+        let format = ControllerDiagnostics.timeFormat
+        expect(at(20, 12, 17, 250).formatted(format), "20:12:17.250", "evening is 20, not 08")
+        expect(at(8, 5, 9, 500).formatted(format), "08:05:09.500", "morning keeps its leading zero")
+        expect(at(0, 0, 0, 0).formatted(format), "00:00:00.000", "midnight is 00, not 12")
+        expect(at(12, 30, 0, 0).formatted(format), "12:30:00.000", "noon is 12")
     }
 
     private static func compatibility() {

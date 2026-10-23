@@ -45,8 +45,11 @@ final class ControllerDiagnostics: ObservableObject {
     private var presses: [ControllerCommand: Int] = [:]
     private var actions: [ControllerCommand: Int] = [:]
     private var settle: DispatchWorkItem?
-    private static let timeFormat = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute().second()
-        .secondFraction(.fractional(3))
+    /// 24-hour, whatever the Mac's clock setting, so log times line up with the log's file name
+    /// and with notes taken during a test.
+    static let timeFormat = Date.VerbatimFormatStyle(
+        format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits).\(secondFraction: .fractional(3))",
+        timeZone: .current, calendar: Calendar(identifier: .gregorian))
 
     /// Called by the main window, which has the app's controller, navigator and library.
     func attach(controller: ControllerInput, navigator: Navigator, library: Library) {
@@ -298,8 +301,7 @@ struct ControllerDiagnosticsView: View {
             ScrollViewReader { proxy in
                 List(diagnostics.entries) { entry in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(entry.time, format: Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute().second()
-                            .secondFraction(.fractional(3)))
+                        Text(entry.time, format: ControllerDiagnostics.timeFormat)
                             .foregroundStyle(.secondary)
                         Text(entry.kind.rawValue)
                             .foregroundStyle(entry.kind == .check ? Color.warning : .secondary)
