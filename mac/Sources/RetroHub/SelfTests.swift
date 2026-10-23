@@ -25,7 +25,8 @@ enum SelfTests {
         for (name, section) in [("titles", titles), ("PARAM.SFO", { sfo(in: tmp.appending(path: "sfo")) }),
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
                                 ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
-                                ("cover art", coverArt), ("appearance", appearance), ("game process", gameProcess),
+                                ("cover art", coverArt), ("old settings", legacySettings),
+                                ("appearance", appearance), ("game process", gameProcess),
                                 ("controller diagnostics", controllerDiagnostics), ("compatibility", compatibility)] {
             print("- \(name)")
             section()
@@ -189,6 +190,16 @@ enum SelfTests {
         expect(CoverArt.result(status: nil, data: Data()), .offline, "no HTTP status is retried later")
     }
 
+    /// Only the installed RetroHub takes over the settings saved under the old bundle ID; the
+    /// development copies must never see the Mac's real favorites, recents or games folder.
+    private static func legacySettings() {
+        expect(Library.takesLegacySettings(bundleID: "io.github.jbutler0831.retrohub"), true, "the installed RetroHub")
+        for id in ["io.github.jbutler0831.retrohub.dev", "io.github.jbutler0831.retrohub.devcheck", "local.retrohub"] {
+            expect(Library.takesLegacySettings(bundleID: id), false, "not \(id)")
+        }
+        expect(Library.takesLegacySettings(bundleID: nil), false, "not the bare debug binary")
+    }
+
     /// Launcher reports when the emulator's process ends, with its exit status, also when it
     /// fails straight away; Library uses it to allow one game at a time.
     private static func gameProcess() {
@@ -318,15 +329,20 @@ enum SelfTests {
 
         // Status text needs 4.5:1 wherever it's drawn: on the window, on its own 14% tint in the
         // status pill, and (orange only) on an 18% tint in the sidebar's count badge. The sidebar's
-        // material, as drawn on macOS 14.4, is darker than the window in Light mode and lighter in Dark.
+        // material, as drawn on macOS 14.4 and 15.7, is darker than the window in Light mode and
+        // lighter in Dark (on 15, lighter still).
+        func rgb(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> NSColor {
+            NSColor(srgbRed: red / 255, green: green / 255, blue: blue / 255, alpha: 1)
+        }
         for name in [NSAppearance.Name.aqua, .darkAqua] {
-            let sidebar = name == .aqua ? NSColor(srgbRed: 227 / 255, green: 228 / 255, blue: 237 / 255, alpha: 1)
-                                        : NSColor(srgbRed: 56 / 255, green: 59 / 255, blue: 65 / 255, alpha: 1)
-            var window = sidebar
+            let sidebars = name == .aqua ? [(rgb(227, 228, 237), "macOS 14"), (rgb(233, 233, 233), "macOS 15")]
+                                         : [(rgb(56, 59, 65), "macOS 14"), (rgb(74, 74, 74), "macOS 15")]
+            var window = sidebars[0].0
             NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
                 window = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)!
             }
-            let places = [(window, 0.0, "window"), (window, 0.14, "pill"), (sidebar, 0.18, "badge")]
+            let places = [(window, 0.0, "window"), (window, 0.14, "pill")]
+                + sidebars.map { ($0.0, 0.18, "badge on \($0.1)") }
             for (color, colorName, drawnOn) in [(NSColor.systemOrange, "orange", places), (.systemGreen, "green", Array(places.prefix(2)))] {
                 var text = color, tint = color
                 NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
