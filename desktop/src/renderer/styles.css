@@ -97,6 +97,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 1px 7px;
   border-radius: 99px;
 }
+.badge.setup-needed {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 18%, transparent);
+}
 .nav-item.active .badge { color: #fff; background: rgba(255, 255, 255, 0.25); }
 
 .tile {

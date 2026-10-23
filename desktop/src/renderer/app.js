@@ -154,15 +154,35 @@ function render() {
   }
 }
 
+const gamesText = (count) => (count === 1 ? '1 game' : `${count} games`);
+
+/** A sidebar row's tooltip: what's in the list and, for a system with games, what plays them. */
+function rowHelp(key, count) {
+  if (key === 'setup') return 'Emulators, games folder, graphics, controller and BIOS files';
+  const system = systemFor(key);
+  if (!system) return `${itemInfo(key).title}: ${gamesText(count)}`;
+  if (!count) return `${system.name}: no games yet`;
+  const r = system.readiness;
+  return `${system.name}: ${gamesText(count)}. ${r.ready ? r.summary : `Setup needed. ${r.detail || ''}`}`;
+}
+
 function renderSidebar() {
-  const row = (key, count) => `<button class="nav-item${key === selection ? ' active' : ''}" data-key="${key}">
-      ${tile(key)}<span class="name">${esc(itemInfo(key).title)}</span>${count ? `<span class="badge">${count}</span>` : ''}
+  const row = (key, count) => {
+    // An orange count with a warning sign (not color alone) when nothing installed can play the games.
+    const setupNeeded = count > 0 && systemFor(key)?.readiness.ready === false;
+    const label = [itemInfo(key).title, ...(count === undefined ? [] : [gamesText(count)]), ...(setupNeeded ? ['setup needed'] : [])];
+    return `<button class="nav-item${key === selection ? ' active' : ''}" data-key="${key}"
+        title="${esc(rowHelp(key, count))}" aria-label="${esc(label.join(', '))}">
+      ${tile(key)}<span class="name">${esc(itemInfo(key).title)}</span>${count ? `<span class="badge${setupNeeded ? ' setup-needed' : ''}">${setupNeeded ? I.alert({ size: 10 }) : ''}${count}</span>` : ''}
     </button>`;
+  };
   nav.innerHTML =
     `<div class="nav-section">${row('favorites', gamesFor('favorites').length)}${row('recent', gamesFor('recent').length)}${row('setup')}</div>` +
     S.makers.map((maker) => `<div class="nav-section"><div class="nav-heading">${maker}</div>
       ${S.systems.filter((s) => s.maker === maker).map((s) => row(`sys:${s.id}`, (S.games[s.id] || []).length)).join('')}
     </div>`).join('');
+  // LB/RB and the keyboard can select a row that's out of view.
+  nav.querySelector('.nav-item.active')?.scrollIntoView({ block: 'nearest' });
 }
 
 function renderController() {
@@ -186,7 +206,7 @@ function renderContent() {
     content.innerHTML = `<div class="page-backdrop" style="--c:${info.color}"></div>
       <div class="page-header">${tile(selection, 'big')}
         <div><h2>${esc(info.title)}</h2>
-          <div class="page-meta"><span>${total === 1 ? '1 game' : `${total} games`}</span>${system ? statusHtml(system) : ''}</div>
+          <div class="page-meta"><span>${search.trim() ? `${games.length} of ${gamesText(total)}` : gamesText(total)}</span>${system ? statusHtml(system) : ''}</div>
         </div>
       </div>
       ${games.length ? `<div class="grid" id="grid">${games.map((g) => cardHtml(g, !system)).join('')}</div>` : emptyHtml(system)}`;
