@@ -119,16 +119,24 @@ enum UIChecks {
         [
             Step(name: "launch", action: {}, check: {
                 checkRows()
-                expect(window.title == "Setup", "opens on Setup (no emulators): \(window.title)")
+                if Emulator.allCases.contains(where: \.isInstalled) {
+                    expect(window.title == "NES", "opens on NES (an emulator is installed): \(window.title)")
+                } else {
+                    expect(window.title == "Setup", "opens on Setup (no emulators): \(window.title)")
+                }
                 expect(menuItem(key: "n", title: "Window") == nil, "no New Window command, so one controller press acts once")
                 expect(menuItem(key: ",", title: "Setup") != nil, "Setup… (⌘,) is in the app menu")
                 expect(UserDefaults.standard.string(forKey: AppAppearance.key) == nil && NSApp.appearance == nil,
                        "follows the system appearance by default")
             }),
+            // From Setup (row 3), wherever the app opened: with an emulator installed it opens on NES.
             Step(name: "down arrow in the sidebar", action: {
                 if let sidebar { window.makeFirstResponder(sidebar) }
-                sidebarOrigin = sidebar?.visibleRect.origin ?? .zero
-                press(.down)
+                click(row: 3)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    sidebarOrigin = sidebar?.visibleRect.origin ?? .zero
+                    press(.down)
+                }
             }, check: {
                 expect(window.title == "NES", "↓ selects NES: \(window.title)")
                 expect(sidebarFocused, "the sidebar keeps keyboard focus")
@@ -238,9 +246,9 @@ enum UIChecks {
                 splitView?.setPosition(240, ofDividerAt: 0)
                 window.setContentSize(NSSize(width: 1500, height: 900))
             }, check: checkRows),
-            // NES is selected; Super Nintendo (row 6) shows an unselected orange badge.
+            // NES is selected; the badge measured is an unselected one (badgeSystem).
             Step(name: "View menu Appearance Dark", wait: 1.2, action: {
-                sidebar?.scrollRowToVisible(6)
+                badgeRow.map { sidebar?.scrollRowToVisible($0) }
                 chooseInMenu(.dark)
             }, check: {
                 checkAppearance(.dark, "View › Appearance › Dark")
@@ -260,7 +268,7 @@ enum UIChecks {
             }),
             Step(name: "NES in Light", wait: 1.2, action: {
                 shortcut("]"); shortcut("]"); shortcut("]")
-                sidebar?.scrollRowToVisible(6)
+                badgeRow.map { sidebar?.scrollRowToVisible($0) }
             }, check: {
                 expect(window.title == "NES", "⌘] from Setup three times reaches NES: \(window.title)")
                 checkBadgeContrast()
@@ -364,12 +372,37 @@ enum UIChecks {
         expect(macAppearance == macAppearanceAtLaunch, "the Mac's own appearance is unchanged: \(macAppearance)")
     }
 
-    /// Text contrast of Super Nintendo's count badge (orange, with a warning sign: there's no
-    /// emulator for it) as drawn in the window: the most common pale orange pixel, the badge's
-    /// tint, against the strongest orange pixel, its text and sign. Needs 4.5:1.
+    /// The first system after NES with games but nothing installed to play them, so its row
+    /// shows the orange badge unselected: Super Nintendo on a Mac without emulators. Nil when
+    /// every system with games can play here.
+    private static var badgeSystem: GameSystem? {
+        guard let root = UserDefaults.standard.string(forKey: "libraryRoot") else { return nil }
+        return GameSystem.allCases.first { system in
+            system != .nes && system != .vita && !Launcher.readiness(for: system).ready
+                && !Library.scan(system, in: URL(filePath: root).appending(path: system.folderName)).isEmpty
+        }
+    }
+
+    /// The sidebar row of `badgeSystem`. Each section has a header row, the first one empty.
+    private static var badgeRow: Int? {
+        guard let system = badgeSystem else { return nil }
+        var row = 0
+        for section in SidebarItem.sections {
+            if let index = section.items.firstIndex(of: .system(system)) { return row + 1 + index }
+            row += 1 + section.items.count
+        }
+        return nil
+    }
+
+    /// Text contrast of an orange count badge (with a warning sign: there's no emulator for the
+    /// system) as drawn in the window: the most common pale orange pixel, the badge's tint, against
+    /// the strongest orange pixel, its text and sign. Needs 4.5:1.
     private static func checkBadgeContrast() {
         guard let sidebar, let frame = window.contentView?.superview else { return expect(false, "no sidebar") }
-        var rect = sidebar.rect(ofRow: 6)
+        guard let system = badgeSystem, let row = badgeRow else {
+            return print("  (no orange badge to measure: every system with games can play on this Mac)")
+        }
+        var rect = sidebar.rect(ofRow: row)
         rect.size.width /= 2
         rect.origin.x += rect.width
         let area = sidebar.convert(rect, to: frame)
@@ -389,11 +422,11 @@ enum UIChecks {
             }
         }
         guard let tint = tints.max(by: { $0.value < $1.value })?.key, !marks.isEmpty else {
-            return expect(false, "found the orange badge next to Super Nintendo")
+            return expect(false, "found the orange badge next to \(system.displayName)")
         }
         let ratio = marks.map { $0.contrast(with: tint) }.max() ?? 0
-        expect(ratio >= 4.5, String(format: "the orange badge's text is readable in %@: %.2f:1",
-                                    isDark(window.effectiveAppearance) ? "Dark" : "Light", ratio))
+        expect(ratio >= 4.5, String(format: "the orange badge's text next to %@ is readable in %@: %.2f:1",
+                                    system.displayName, isDark(window.effectiveAppearance) ? "Dark" : "Light", ratio))
     }
 
     /// The selected row is in view, below the toolbar.
@@ -447,12 +480,17 @@ enum UIChecks {
         return search(NSApp.mainMenu)
     }
 
-    /// An item in View › Appearance.
+    /// An item in View › Appearance, with its checkmark as it would show with the menu open: on
+    /// macOS 15, SwiftUI only updates the checkmarks when the menu is about to open.
     private static func appearanceItem(_ appearance: AppAppearance) -> NSMenuItem? {
         func search(_ menu: NSMenu?) -> NSMenuItem? {
             for item in menu?.items ?? [] {
-                if item.title == "Appearance", let found = item.submenu?.items.first(where: { $0.title == appearance.label }) {
-                    return found
+                if item.title == "Appearance", let submenu = item.submenu {
+                    for menu in [item.menu, submenu].compactMap({ $0 }) {
+                        menu.delegate?.menuNeedsUpdate?(menu)
+                        menu.update()
+                    }
+                    if let found = submenu.items.first(where: { $0.title == appearance.label }) { return found }
                 }
                 if let found = search(item.submenu) { return found }
             }
