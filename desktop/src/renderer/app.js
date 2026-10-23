@@ -1,6 +1,7 @@
 // RetroHub window: sidebar, game grid, Setup page, couch mode and controller input.
 const api = window.retrohub;
 const I = window.ICONS;
+const PLAYTIME = window.PLAYTIME;
 
 let S = null;                 // State from the main process.
 let lastStateJSON = '';
@@ -65,6 +66,7 @@ function itemInfo(key) {
     favorites: { title: 'Favorites', color: '#ffb800', icon: I.star },
     recent: { title: 'Recently Played', color: '#ff9500', icon: I.clock },
     setup: { title: 'Setup', color: '#8e8e93', icon: I.wrench },
+    check: { title: 'Library Check', color: '#5856d6', icon: I.refresh },
   }[key];
 }
 
@@ -125,23 +127,47 @@ function cardHtml(game, showSystem) {
       <button class="play-button" data-play title="Play" aria-label="Play ${esc(game.displayTitle)}">${I.play({ size: 22 })}</button>
     </div>
     <div class="card-title">${esc(game.displayTitle)}</div>
-    ${showSystem ? `<div class="card-sub">${esc(system.name)}</div>` : ''}
+    ${cardSub(game, showSystem, system)}
   </div>`;
 }
 
-/** Swaps each placeholder for its cover art once it loads. */
-function loadCovers(root) {
-  for (const el of root.querySelectorAll('[data-cover]')) {
-    cover(el.dataset.cover).then((url) => {
-      const img = el.querySelector('img');
-      if (!url || !img) return;
-      img.onload = () => {
-        img.hidden = false;
-        el.querySelector('.placeholder')?.remove();
-      };
-      img.src = url;
-    });
+/** Under a card: the system (in mixed lists) and the time played, such as "NES · 3 h 12 min". */
+function cardSub(game, showSystem, system) {
+  const played = S.playtime[game.id]?.seconds || 0;
+  const parts = [showSystem && system.name, played >= 60 && PLAYTIME.format(played)].filter(Boolean);
+  return parts.length ? `<div class="card-sub">${esc(parts.join(' · '))}</div>` : '';
+}
+
+/**
+ * Fetches covers only for games on screen or close to it, so opening a list of thousands doesn't
+ * ask the cover server for all of them at once. Scrolling, and moving through couch mode's
+ * carousel, bring the next ones into reach.
+ */
+const coverObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    coverObserver.unobserve(entry.target);
+    showCover(entry.target);
   }
+}, { rootMargin: '400px' });
+
+/** Watches each placeholder in root, and stops watching the ones from before (they're gone). */
+function loadCovers(root) {
+  coverObserver.disconnect();
+  for (const el of root.querySelectorAll('[data-cover]')) coverObserver.observe(el);
+}
+
+/** Swaps a placeholder for its cover art once it loads. */
+function showCover(el) {
+  cover(el.dataset.cover).then((url) => {
+    const img = el.querySelector('img');
+    if (!url || !img) return;
+    img.onload = () => {
+      img.hidden = false;
+      el.querySelector('.placeholder')?.remove();
+    };
+    img.src = url;
+  });
 }
 
 // ---- Rendering -------------------------------------------------------------------
@@ -205,15 +231,17 @@ function renderContent() {
   const scroll = content.scrollTop;
   if (selection === 'setup') {
     renderSetup();
+  } else if (selection === 'check') {
+    renderCheck();
   } else {
     const games = visibleGames();
     if (games.length && !games.some((g) => g.id === selectedGame[selection])) selectedGame[selection] = games[0].id;
     const system = systemFor(selection);
     const total = gamesFor(selection).length;
-    content.innerHTML = `<div class="page-backdrop" style="--c:${info.color}"></div>
+    content.innerHTML = `<div class="page-backdrop" style="--c:${info.color}"></div>${bannerHtml()}
       <div class="page-header">${tile(selection, 'big')}
         <div><h2>${esc(info.title)}</h2>
-          <div class="page-meta"><span>${search.trim() ? `${games.length} of ${gamesText(total)}` : gamesText(total)}</span>${system ? statusHtml(system) : ''}</div>
+          <div class="page-meta"><span>${search.trim() ? `${games.length} of ${gamesText(total)}` : gamesText(total)}</span>${system ? statusHtml(system) : ''}${playedInAll()}</div>
         </div>
       </div>
       ${games.length ? `<div class="grid" id="grid">${games.map((g) => cardHtml(g, !system)).join('')}</div>` : emptyHtml(system)}`;
@@ -221,6 +249,12 @@ function renderContent() {
     announce(games, selectedGame[selection]);
   }
   content.scrollTop = scroll;
+}
+
+/** On Recently Played: the time played across every game. */
+function playedInAll() {
+  const seconds = PLAYTIME.totalSeconds(S.playtime);
+  return selection === 'recent' && seconds >= 60 ? `<span>${esc(PLAYTIME.format(seconds))} played in all</span>` : '';
 }
 
 function emptyHtml(system) {
@@ -297,9 +331,19 @@ function renderSetup() {
         </div>
       </section>
       <section>
+        <h3>Library</h3>
+        <p class="subtitle">RetroHub notices new, moved, renamed, missing and duplicate games each time it scans, and asks before changing anything.</p>
+        <div class="panel row-panel">
+          <div class="grow">${esc(checkSummary() || 'No changes since you last checked.')}</div>
+          <button class="button" data-show="check">Check Library…</button>
+        </div>
+      </section>
+      <section>
         <h3>Graphics</h3>
         <p class="subtitle">Applied when RetroHub starts a game in RetroArch. RetroArch's own settings stay as they are.</p>
         <div class="panel graphics-panel">
+          ${graphicsRow('Full screen', 'Games start full screen in RetroArch. Press F in RetroArch to switch between full screen and a window.',
+                        segmented('fullscreen', [[true, 'On'], [false, 'Off']]))}
           ${graphicsRow('Screen filter', '2D systems such as NES, SNES, Genesis, Game Boy and arcade. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.',
                         segmented('filter', [['off', 'Off'], ['crt', 'CRT'], ['smooth', 'Smooth HD']]))}
           ${S.shadersMissing ? `<div class="graphics-warning">Download RetroArch's shaders first: Main Menu › Online Updater › Update Slang Shaders.</div>` : ''}
@@ -338,6 +382,91 @@ function renderSetup() {
     </div>`;
 }
 
+// ---- Library Check ---------------------------------------------------------------------
+
+const fileName = (file) => file.split(/[\\/]/).pop();
+let listBeforeCheck = null;   // Where Done goes back to.
+
+/** "3 new · 1 moved or renamed · 2 missing": what changed since the last review, or ''. */
+function checkSummary() {
+  const n = S.libraryCheck.news;
+  return [n.added && `${n.added} new`, n.renamed && `${n.renamed} moved or renamed`, n.missing && `${n.missing} missing`]
+    .filter(Boolean).join(' · ');
+}
+
+function bannerHtml() {
+  const summary = checkSummary();
+  return summary ? `<div class="library-banner" role="status">${I.refresh({ size: 14 })}<span class="grow">Library changed: ${esc(summary)}</span>
+    <button class="button small" data-show="check">Review</button></div>` : '';
+}
+
+/** What confirming or removing would affect: "favorite · played 3 days ago". */
+function carriesText(item) {
+  const parts = [item.favorite && 'favorite', item.lastPlayed && `played ${timeAgo(item.lastPlayed)}`,
+    item.playtime >= 60 && `${PLAYTIME.format(item.playtime)} of play`].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'no favorite or play history';
+}
+
+function renderCheck() {
+  const c = S.libraryCheck;
+  const gameCell = (title, system, ...details) =>
+    `${tile(`sys:${system}`)}<div class="grow"><strong>${esc(title)}</strong>${details.map((d) => `<span>${esc(d)}</span>`).join('')}</div>`;
+  const section = (title, subtitle, items, row, actions = '') => `<section>
+      <div class="check-heading"><h3>${esc(title)} <span class="count">${items.length}</span></h3>${items.length ? actions : ''}</div>
+      <p class="subtitle">${esc(subtitle)}</p>
+      ${items.length ? `<div class="panel check-list">${items.map(row).join('')}</div>` : '<p class="check-none">None.</p>'}
+    </section>`;
+  const summary = checkSummary();
+  content.innerHTML = `<div class="page-backdrop" style="--c:#5856d6"></div>
+    <div class="page-header">${tile('check', 'big')}
+      <div><h2>Library Check</h2><div class="page-meta">${esc(summary ? `Since you last checked: ${summary}` : 'No changes since you last checked.')}</div></div>
+    </div>
+    <div class="setup check">
+      ${section('Moved or renamed', 'Files that turned up under a new name. Their favorite and play history move with them only when you confirm.',
+        c.renamed, (r) => `<div class="check-row">${gameCell(r.title, r.system, `Now: ${fileName(r.to)} · ${carriesText(r)}`, `Was: ${fileName(r.from)}`)}
+          <button class="button small primary" data-check="applyRename" data-from="${esc(r.from)}" data-to="${esc(r.to)}">Same game</button>
+          <button class="button small" data-check="notRenamed" data-from="${esc(r.from)}">Not the same</button></div>`,
+        '<button class="button small" data-check="applyAllRenames">Same game for all</button>')}
+      ${section('Missing', "Games whose files are gone. They're kept, with their favorites and play history, until you remove them, so nothing is lost if the files come back (from an external drive, say).",
+        c.missing, (m) => `<div class="check-row">${gameCell(m.title, m.system, `${fileName(m.path)} · missing since ${timeAgo(m.since)} · ${carriesText(m)}`)}
+          <button class="button small" data-check="removeMissing" data-path="${esc(m.path)}">Remove</button></div>`,
+        '<button class="button small" data-check="removeAllMissing">Remove all</button>')}
+      ${section('New', 'Games added since you last checked. They are already in your library.',
+        c.added, (a) => `<div class="check-row">${gameCell(a.title, a.system, `${systemById(a.system)?.name || a.system} · ${fileName(a.path)}`)}</div>`)}
+      ${section('Duplicates', 'The same file in more than one place.',
+        c.duplicates, (d) => `<div class="check-row">${gameCell(d.title, d.system, d.paths.map(fileName).join(' · '))}
+          ${d.paths.map((p, i) => `<button class="button small" data-check="showFile" data-path="${esc(p)}" title="${esc(p)}">Show copy ${i + 1}</button>`).join('')}</div>`)}
+      ${section('No cover art found', 'RetroHub looked for these covers and found none. Put an image with the same name next to the game, or look again.',
+        c.noArt, (g) => `<div class="check-row">${gameCell(g.title, g.system, systemById(g.system)?.name || g.system)}</div>`,
+        '<button class="button small" data-check="lookAgain">Look again</button>')}
+      <div class="check-done"><button class="button primary" data-check="markReviewed">Done</button></div>
+    </div>`;
+}
+
+/** A button on the Library Check page. Nothing changes without one of these. */
+async function checkAction(action, target) {
+  const c = S.libraryCheck;
+  const d = target.dataset;
+  let next;
+  if (action === 'applyRename') next = await api.libraryAction('applyRename', { from: d.from, to: d.to });
+  else if (action === 'applyAllRenames') for (const r of c.renamed) next = await api.libraryAction('applyRename', { from: r.from, to: r.to });
+  else if (action === 'notRenamed') next = await api.libraryAction('notRenamed', { from: d.from });
+  else if (action === 'removeMissing') next = await api.libraryAction('removeMissing', { paths: [d.path] });
+  else if (action === 'removeAllMissing') {
+    const count = c.missing.length;
+    if (!confirm(`Remove ${count === 1 ? 'the missing game' : `all ${count} missing games`}? Their favorites and play history are forgotten.`)) return;
+    next = await api.libraryAction('removeMissing', { paths: c.missing.map((m) => m.path) });
+  } else if (action === 'lookAgain') {
+    for (const g of c.noArt) coverCache.delete(g.id);
+    next = await api.libraryAction('lookAgain', { ids: c.noArt.map((g) => g.id) });
+  } else if (action === 'showFile') return api.showFile(d.path);
+  else if (action === 'markReviewed') {
+    applyState(await api.libraryAction('markReviewed'), true);
+    return show(listBeforeCheck || 'sys:nes');
+  }
+  if (next) applyState(next, true);
+}
+
 // ---- Couch mode --------------------------------------------------------------------
 
 /** Cover width and gap in pixels, from the CSS (they shrink on small screens). */
@@ -369,10 +498,18 @@ function renderCouch() {
       : `<div class="couch-empty">${I.gamepad({ size: 64 })}<h2>No games yet</h2><p>Add games to ${esc(S.libraryRoot)} to see them here.</p></div>`}
     </div>
     <div class="couch-hints">${hint('A', 'Play')}${hint('Y', 'Favorite')}${hint('LB RB', 'Switch')}${hint('B', 'Exit')}</div>`;
-  loadCovers(couchEl);
   // On a small screen not every tab fits: keep the current list's tab in the middle.
   couchEl.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  // Straight to the current game, without sliding past the ones before it (each would count as
+  // on screen and have its cover fetched); then watch for the covers in view.
+  const carousel = $('carousel');
+  if (carousel) carousel.style.transition = 'none';
   updateCouch();
+  if (carousel) {
+    void carousel.offsetWidth;
+    carousel.style.transition = '';
+  }
+  loadCovers(couchEl);
 }
 
 /** Moves the carousel and refreshes the title and backdrop without rebuilding it. */
@@ -390,7 +527,7 @@ function updateCouch() {
   const system = systemById(game.system);
   const last = S.lastPlayed[game.id];
   $('couch-details').innerHTML = `<h2>${esc(game.displayTitle)}${S.favorites.includes(game.id) ? `<span class="star">${I.star({ size: 26 })}</span>` : ''}</h2>
-    <p>${esc(system.name)}${last ? ` · Last played ${timeAgo(last)}` : ''}</p>`;
+    <p>${esc(system.name)}${last ? ` · Last played ${timeAgo(last)}` : ''}${(S.playtime[game.id]?.seconds || 0) >= 60 ? ` · Played ${esc(PLAYTIME.format(S.playtime[game.id].seconds))}` : ''}</p>`;
   cover(game.id).then((url) => {
     if (gamesFor(selection)[couchIndex]?.id !== game.id) return;
     $('couch-backdrop').style.backgroundImage = url ? `url(${JSON.stringify(url)})` : 'none';
@@ -476,6 +613,7 @@ function cycle(step) {
 /** Shows a list or Setup in the browser, leaving couch mode. */
 function show(key) {
   if (couch) setCouch(false);
+  if (key === 'check' && selection !== 'check') listBeforeCheck = selection;
   selection = key;
   render();
 }
@@ -544,7 +682,7 @@ nav.addEventListener('click', (event) => {
 });
 
 async function handleButtons(event) {
-  const target = event.target.closest('[data-download], [data-open-folder], [data-choose-root], [data-locate], [data-play], [data-exit], [data-tab], [data-graphics], [data-appearance]');
+  const target = event.target.closest('[data-download], [data-open-folder], [data-choose-root], [data-locate], [data-play], [data-exit], [data-tab], [data-graphics], [data-appearance], [data-show], [data-check]');
   if (!target) return false;
   const d = target.dataset;
   if ('download' in d) api.openDownload(d.download);
@@ -556,6 +694,8 @@ async function handleButtons(event) {
   else if ('tab' in d) { selection = d.tab; couchIndex = pickedIndex(); render(); }
   else if ('graphics' in d) applyState(await api.setGraphics({ [d.graphics]: JSON.parse(d.value) }));
   else if ('appearance' in d) applyState(await api.setAppearance(d.appearance));
+  else if ('show' in d) { show(d.show); content.focus(); }
+  else if ('check' in d) await checkAction(d.check, target);
   return true;
 }
 

@@ -108,6 +108,32 @@ function startProcess(command, args) {
   });
 }
 
+/** How soon an emulator closing counts as "straight away". */
+const QUICK_EXIT_SECONDS = 10;
+
+/**
+ * What an emulator closing means: 'played' after a while; 'failed' straight away with an error
+ * (a missing BIOS, core or setting); 'handedOff' straight away without one, which is usually an
+ * emulator passing the game to a copy that was already open. The Mac app's GameSession.ending has
+ * the same rule.
+ */
+function endOfGame(seconds, code, signal) {
+  if (seconds >= QUICK_EXIT_SECONDS) return 'played';
+  return code === 0 && !signal ? 'handedOff' : 'failed';
+}
+
+/** What RetroHub says when an emulator closes straight away with an error. */
+function failedMessage(label, code, note) {
+  const how = code === null || code === undefined ? '' : ` (exit code ${code})`;
+  return `${label} closed straight away${how}. Open it on its own and load the game to see what it says.`
+    + (note ? ` ${note}` : '');
+}
+
+/** Full screen or in a window, for this run only (RetroArch's own setting is left alone). */
+function retroArchWindowArgs(fullscreen) {
+  return fullscreen ? ['-f'] : [];
+}
+
 /**
  * The first installed way to play a system: { label, start(gamePath) } or null. start resolves
  * with the emulator's process, or null for OpenEmu, which macOS opens and which stays open as a
@@ -124,7 +150,7 @@ function plan(system, customPaths, graphics = graphicsOptions.DEFAULTS, { fullsc
         if (corePath) {
           return {
             label: `RetroArch (${core.name})`,
-            start: (game) => startProcess(retroarch.command, [...retroarch.prefix, ...(fullscreen ? ['-f'] : []), '-L', corePath,
+            start: (game) => startProcess(retroarch.command, [...retroarch.prefix, ...retroArchWindowArgs(fullscreen), '-L', corePath,
               ...graphicsOptions.retroArchArgs(system.id, core, retroarch, graphics), game]),
           };
         }
@@ -182,4 +208,4 @@ async function launch(game, customPaths, graphics, options) {
   }
 }
 
-module.exports = { availableEmulators, resolve, readiness, launch, startProcess };
+module.exports = { availableEmulators, resolve, readiness, launch, startProcess, retroArchWindowArgs, endOfGame, failedMessage };

@@ -2,7 +2,8 @@
 // the emulator's process ends, with its exit status, also when it fails straight away.
 const test = require('node:test');
 const assert = require('node:assert');
-const { startProcess } = require('../src/emulators');
+const { startProcess, retroArchWindowArgs, endOfGame, failedMessage } = require('../src/emulators');
+const graphics = require('../src/graphics');
 
 // Emulators are started detached and unreferenced, so they don't hold RetroHub open. In the app,
 // Electron keeps running and hears the exit; here a timer keeps Node running until it does.
@@ -27,4 +28,19 @@ test('an emulator that fails straight away still reports its end', async () => {
 
 test('a missing emulator is an error, not a silent failure', async () => {
   await assert.rejects(startProcess('/nonexistent/emulator', []));
+});
+
+test('RetroArch games start full screen unless turned off', () => {
+  assert.strictEqual(graphics.DEFAULTS.fullscreen, true, 'on by default');
+  assert.deepStrictEqual(retroArchWindowArgs(true), ['-f']);
+  assert.deepStrictEqual(retroArchWindowArgs(false), [], 'or in a window, as RetroArch is set');
+});
+
+test('an emulator closing straight away: an error is a failed start, no error a hand-off', () => {
+  assert.strictEqual(endOfGame(2, 1, null), 'failed', 'exit code 1 at once');
+  assert.strictEqual(endOfGame(2, null, 'SIGSEGV'), 'failed', 'a crash at once');
+  assert.strictEqual(endOfGame(2, 0, null), 'handedOff', 'closed cleanly at once: handed to a copy already open');
+  assert.strictEqual(endOfGame(600, 1, null), 'played', 'after ten minutes it was played, whatever the exit');
+  assert.strictEqual(failedMessage('RetroArch (Beetle Saturn)', 1, 'Needs a Saturn BIOS dumped from your console.'),
+    'RetroArch (Beetle Saturn) closed straight away (exit code 1). Open it on its own and load the game to see what it says. Needs a Saturn BIOS dumped from your console.');
 });
