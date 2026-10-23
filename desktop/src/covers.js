@@ -34,6 +34,7 @@ async function coverPath(game, cacheRoot) {
   if (exists(missMarker)) return null;
   fs.mkdirSync(path.dirname(cached), { recursive: true });
 
+  let allMissing = true;
   for (const name of candidateNames(game.title)) {
     const url = `${SERVER}/${encodeURIComponent(system.libretro)}/Named_Boxarts/${encodeURIComponent(sanitize(name))}.png`;
     let response;
@@ -42,13 +43,24 @@ async function coverPath(game, cacheRoot) {
     } catch {
       return null; // Offline: don't remember the miss; try again later.
     }
-    if (response.ok) {
+    const result = fetchResult(response.status);
+    if (result === 'found') {
       fs.writeFileSync(cached, Buffer.from(await response.arrayBuffer()));
       return cached;
     }
+    if (result === 'retry') allMissing = false;
   }
-  fs.writeFileSync(missMarker, '');
+  if (allMissing) fs.writeFileSync(missMarker, '');
   return null;
 }
 
-module.exports = { coverPath };
+/**
+ * Only a 404 means there's no art under that name. Anything else that isn't a 200 (rate limiting,
+ * a server outage) is treated like being offline, so the miss isn't remembered.
+ */
+function fetchResult(status) {
+  if (status === 200) return 'found';
+  return status === 404 ? 'missing' : 'retry';
+}
+
+module.exports = { coverPath, fetchResult };

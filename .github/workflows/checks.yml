@@ -1,0 +1,56 @@
+# Checks the Windows/Linux/Raspberry Pi app (desktop/) on each pull request: syntax, the tests, and
+# the window checks, which drive the real app window (see desktop/test/window/run.js). ubuntu-24.04-arm
+# is the same architecture as a Raspberry Pi 4/5 running 64-bit Raspberry Pi OS. Nothing is built or
+# published; release.yml does that.
+name: Checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - run: npm ci
+
+      - name: Syntax
+        run: for f in src/*.js src/renderer/*.js test/*.js test/window/*.js test/window/steps/*.js; do node --check "$f"; done
+
+      - name: Tests
+        run: npm test
+
+      # Linux has no screen here: the window draws on a virtual one.
+      - name: Libraries for the window (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0t64 libnss3 libasound2t64 libgbm1
+
+      - name: Window checks
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a' || '' }} npm run test:window
+
+      - name: Pictures of each step
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: window-checks-${{ matrix.os }}
+          path: desktop/dist/window-checks
+          if-no-files-found: ignore

@@ -12,17 +12,27 @@ const graphicsOptions = require('./graphics');
 const RECENT_LIMIT = 24;
 // `--console` starts full screen in couch mode, for devices that boot straight into RetroHub.
 const consoleMode = process.argv.includes('--console');
+// `--dev` (npm run dev) keeps its settings in .devdata/desktop and its games in .devdata/Games at
+// the repository root, like the Mac app's RetroHub Dev, so a real library and settings are never
+// touched. `--data-dir=<folder>` does the same in another folder (the window checks use a fresh one).
+const dataDirArg = process.argv.find((arg) => arg.startsWith('--data-dir='));
+const devData = dataDirArg ? path.resolve(dataDirArg.slice('--data-dir='.length))
+  : process.argv.includes('--dev') ? path.join(__dirname, '../../.devdata') : null;
+if (devData) app.setPath('userData', path.join(devData, 'desktop'));
 
 // ---- Settings ---------------------------------------------------------------
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let settings = {
-  libraryRoot: path.join(os.homedir(), 'Games'),
+  libraryRoot: devData ? path.join(devData, 'Games') : path.join(os.homedir(), 'Games'),
   favorites: [],
   lastPlayed: {},
   emulatorPaths: {},
   graphics: { ...graphicsOptions.DEFAULTS },
+  // 'system' (follow the OS), 'light' or 'dark': RetroHub's window only, never the OS setting.
+  appearance: 'system',
 };
+const APPEARANCES = ['system', 'light', 'dark'];
 
 function loadSettings() {
   try {
@@ -67,22 +77,43 @@ function state() {
     lastPlayed: settings.lastPlayed,
     recentLimit: RECENT_LIMIT,
     graphics: settings.graphics,
+    appearance: settings.appearance,
     shadersMissing: graphicsOptions.shadersMissing(resolve(EMULATORS.find((e) => e.id === 'retroarch'), settings.emulatorPaths),
                                                    settings.graphics),
   };
 }
 
 let win;
+/** The game RetroHub started, while its emulator runs: { game, label, process }. */
+let session = null;
 
 function sendState() {
   win?.webContents.send('state', state());
 }
 
+/** RetroHub comes back to the front when the game is closed, as the Mac app does. */
+function gameEnded(child) {
+  if (session?.process !== child) return;
+  session = null;
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
+}
+
 async function play(id) {
   const game = gamesById.get(id);
   if (!game) return { error: 'That game is no longer in your library.' };
+  // One game at a time: A pressed again while the emulator starts, or while it's open behind
+  // RetroHub, mustn't start a second copy.
+  if (session) return { error: `${session.label} is still running ${session.game.displayTitle}. Close it to start another game.` };
   try {
-    await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen: consoleMode });
+    const started = await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen: consoleMode });
+    if (started.process && started.process.exitCode === null) {
+      session = { game, label: started.label, process: started.process };
+      started.process.once('exit', () => gameEnded(started.process));
+    }
     settings.lastPlayed[id] = Date.now();
     saveSettings();
     sendState();
@@ -111,6 +142,15 @@ ipcMain.handle('setGraphics', (_, changes) => {
   const next = { ...settings.graphics, ...changes };
   if (['off', 'crt', 'smooth'].includes(next.filter) && [1, 2, 3, 4].includes(next.scale)) {
     settings.graphics = { filter: next.filter, scale: next.scale, widescreen: !!next.widescreen };
+    saveSettings();
+  }
+  return state();
+});
+
+ipcMain.handle('setAppearance', (_, appearance) => {
+  if (APPEARANCES.includes(appearance)) {
+    settings.appearance = appearance;
+    nativeTheme.themeSource = appearance;
     saveSettings();
   }
   return state();
@@ -205,8 +245,25 @@ function createWindow() {
 
 if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
 
+// One RetroHub at a time: a second copy would also read the controller and overwrite the same
+// settings file. Opening RetroHub again brings the open window forward instead.
+const firstCopy = app.requestSingleInstanceLock();
+if (!firstCopy) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+}
+
 app.whenReady().then(() => {
+  if (!firstCopy) return;
   loadSettings();
+  // Before the window is created, so it opens in the chosen appearance without a flash.
+  nativeTheme.themeSource = APPEARANCES.includes(settings.appearance) ? settings.appearance : 'system';
   rescan();
   createWindow();
 });

@@ -10,6 +10,10 @@
   --selected-row: rgba(0, 0, 0, 0.08);
   --green: #28a745;
   --orange: #e67700;
+  /* Status text: the same colors, dark enough to read on their own tints (5:1 or more). */
+  --green-text: #165c26;
+  --orange-text: #7f4100;
+  --on-green: #fff;
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   --shadow-raised: 0 10px 24px rgba(0, 0, 0, 0.25);
   color-scheme: light;
@@ -27,6 +31,9 @@
     --selected-row: rgba(255, 255, 255, 0.1);
     --green: #32d74b;
     --orange: #ff9f0a;
+    --green-text: #32d74b;
+    --orange-text: #ff9f0a;
+    --on-green: #000;
     --shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     --shadow-raised: 0 10px 28px rgba(0, 0, 0, 0.6);
     color-scheme: dark;
@@ -48,6 +55,7 @@ html, body {
 
 button { font: inherit; color: inherit; cursor: pointer; }
 [hidden] { display: none !important; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 #app { display: flex; height: 100vh; }
 
@@ -85,7 +93,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-align: left;
 }
 .nav-item:hover { background: var(--selected-row); }
-.nav-item.active { background: var(--accent); color: #fff; }
+/* The selected row is blue while the sidebar has keyboard focus, grey while the games have it. */
+.nav-item.active { background: var(--selected-row); }
+#nav:focus-within .nav-item.active { background: var(--accent); color: #fff; }
+.nav-item:focus { outline: none; }
 .nav-item .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .badge {
@@ -97,7 +108,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   padding: 1px 7px;
   border-radius: 99px;
 }
-.nav-item.active .badge { color: #fff; background: rgba(255, 255, 255, 0.25); }
+.badge.setup-needed {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--orange-text);
+  background: color-mix(in srgb, var(--orange) 18%, transparent);
+}
+#nav:focus-within .nav-item.active .badge { color: #fff; background: rgba(255, 255, 255, 0.25); }
 
 .tile {
   flex: none;
@@ -130,7 +148,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   text-overflow: ellipsis;
 }
 .controller-status.connected { color: var(--text); }
-.controller-status.connected svg { color: var(--green); }
+.controller-status.connected svg { color: var(--green-text); }
 
 /* ---- Toolbar ---- */
 
@@ -214,11 +232,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 99px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--c);
+  color: var(--t);
   background: color-mix(in srgb, var(--c) 14%, transparent);
 }
-.pill.ready { --c: var(--green); }
-.pill.needs-setup { --c: var(--orange); }
+.pill.ready { --c: var(--green); --t: var(--green-text); }
+.pill.needs-setup { --c: var(--orange); --t: var(--orange-text); }
 
 .button {
   display: inline-flex;
@@ -260,7 +278,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: #111;
 }
 .card:hover .cover { transform: scale(1.02); box-shadow: var(--shadow-raised); }
-.card.selected .cover { transform: scale(1.04); box-shadow: var(--shadow-raised), 0 0 0 3px var(--accent); }
+/* The picked game is outlined in blue while the games have keyboard focus, in grey otherwise. */
+.card.selected .cover { transform: scale(1.04); box-shadow: var(--shadow-raised), 0 0 0 3px var(--text-2); }
+#content:focus-within .card.selected .cover { box-shadow: var(--shadow-raised), 0 0 0 3px var(--accent); }
 
 .cover img { width: 100%; height: 100%; object-fit: contain; display: block; }
 
@@ -351,7 +371,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
-.step-number.done { background: var(--green); color: #fff; }
+.step-number.done { background: var(--green); color: var(--on-green); }
 .step-text { flex: 1; }
 .step-text strong { display: block; }
 .step-text span { color: var(--text-2); font-size: 13px; }
@@ -381,7 +401,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .emulator-card .covers { font-size: 12px; color: var(--text-2); }
 .emulator-card .location { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .emulator-card .actions { margin-top: auto; padding-top: 6px; display: flex; gap: 6px; align-items: center; }
-.installed { display: inline-flex; align-items: center; gap: 5px; color: var(--green); font-weight: 500; font-size: 13px; }
+.installed { display: inline-flex; align-items: center; gap: 5px; color: var(--green-text); font-weight: 500; font-size: 13px; }
 
 .row-panel { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
 .row-panel .grow { flex: 1; min-width: 0; }
@@ -393,7 +413,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .graphics-row + .graphics-row, .graphics-warning + .graphics-row { border-top: 1px solid var(--border); }
 .graphics-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .graphics-row span { color: var(--text-2); font-size: 13px; }
-.graphics-warning { padding: 0 0 12px; color: #ff9500; font-size: 13px; }
+.graphics-warning { padding: 0 0 12px; color: var(--orange-text); font-size: 13px; }
 .segmented { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--selected-row); }
 .segmented button { border: 0; background: none; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--text); }
 .segmented button.active { background: var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
@@ -433,7 +453,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 20px;
   padding: 44px 60px 0;
 }
-.couch-tabs .tabs { flex: 1; display: flex; gap: 32px; overflow: hidden; justify-content: center; }
+/* Centered when they all fit; otherwise they scroll so the current list's tab stays in view. */
+.couch-tabs .tabs { flex: 1; display: flex; gap: 32px; overflow: hidden; justify-content: safe center; }
 .couch-tabs .tab { font-size: 22px; opacity: 0.45; white-space: nowrap; cursor: pointer; }
 .couch-tabs .tab.active { opacity: 1; font-weight: 700; }
 .button-badge {

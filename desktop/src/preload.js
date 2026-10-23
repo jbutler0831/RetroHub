@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('retrohub', {
   play: (id) => ipcRenderer.invoke('play', id),
   toggleFavorite: (id) => ipcRenderer.invoke('toggleFavorite', id),
   setGraphics: (changes) => ipcRenderer.invoke('setGraphics', changes),
+  setAppearance: (appearance) => ipcRenderer.invoke('setAppearance', appearance),
   cover: (id) => ipcRenderer.invoke('cover', id),
   chooseRoot: () => ipcRenderer.invoke('chooseRoot'),
   locateEmulator: (id) => ipcRenderer.invoke('locateEmulator', id),
