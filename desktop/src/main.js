@@ -8,6 +8,7 @@ const { scanLibrary, systemDir } = require('./library');
 const { availableEmulators, resolve, readiness, launch } = require('./emulators');
 const { coverPath, knownMissing, lookAgain } = require('./covers');
 const scanner = require('./scanner');
+const playtime = require('./renderer/playtime');
 const graphicsOptions = require('./graphics');
 
 const RECENT_LIMIT = 24;
@@ -28,6 +29,8 @@ let settings = {
   libraryRoot: devData ? path.join(devData, 'Games') : path.join(os.homedir(), 'Games'),
   favorites: [],
   lastPlayed: {},
+  // { [game id]: { seconds, sessions } }, from sessions RetroHub started and saw end (renderer/playtime.js).
+  playtime: {},
   emulatorPaths: {},
   graphics: { ...graphicsOptions.DEFAULTS },
   // 'system' (follow the OS), 'light' or 'dark': RetroHub's window only, never the OS setting.
@@ -119,7 +122,8 @@ async function fingerprintInBackground() {
 /** Library Check: the scanner's summary, with what each change affects. */
 function libraryCheck() {
   const summary = scanner.summarize(library.index || {}, library.reviewedAt);
-  const carries = (file) => ({ favorite: settings.favorites.includes(file), lastPlayed: settings.lastPlayed[file] || null });
+  const carries = (file) => ({ favorite: settings.favorites.includes(file), lastPlayed: settings.lastPlayed[file] || null,
+                                playtime: settings.playtime[file]?.seconds || 0 });
   const noArt = [...gamesById.values()].filter((g) => knownMissing(g, coversDir()))
     .map((g) => ({ id: g.id, system: g.system, title: g.displayTitle }));
   return {
@@ -136,8 +140,9 @@ function libraryCheck() {
   };
 }
 
-/** Moves a game's favorite and play history to its new path (a confirmed rename). */
+/** Moves a game's favorite, play history and play time to its new path (a confirmed rename). */
 function moveGameState(from, to) {
+  settings.playtime = playtime.moveGame(settings.playtime, from, to);
   if (settings.favorites.includes(from)) {
     settings.favorites = [...new Set(settings.favorites.map((f) => (f === from ? to : f)))];
   }
@@ -147,9 +152,10 @@ function moveGameState(from, to) {
   }
 }
 
-/** Forgets a missing game: its index entry, favorite and play history. */
+/** Forgets a missing game: its index entry, favorite, play history and play time. */
 function forgetGame(file) {
   delete library.index[file];
+  delete settings.playtime[file];
   settings.favorites = settings.favorites.filter((f) => f !== file);
   delete settings.lastPlayed[file];
 }
@@ -190,6 +196,7 @@ function state() {
     games,
     favorites: settings.favorites,
     lastPlayed: settings.lastPlayed,
+    playtime: settings.playtime,
     recentLimit: RECENT_LIMIT,
     graphics: settings.graphics,
     appearance: settings.appearance,
@@ -200,8 +207,15 @@ function state() {
 }
 
 let win;
-/** The game RetroHub started, while its emulator runs: { game, label, process }. */
+/** The game RetroHub started, while its emulator runs: { game, label, process, started }. */
 let session = null;
+
+/** Adds the session's time to the game's play time (sessions under 10 seconds don't count). */
+function recordPlaytime(ended) {
+  const seconds = (Date.now() - ended.started) / 1000;
+  settings.playtime = playtime.addSession(settings.playtime, ended.game.id, seconds);
+  saveSettings();
+}
 
 function sendState() {
   win?.webContents.send('state', state());
@@ -210,7 +224,9 @@ function sendState() {
 /** RetroHub comes back to the front when the game is closed, as the Mac app does. */
 function gameEnded(child) {
   if (session?.process !== child) return;
+  recordPlaytime(session);
   session = null;
+  sendState();
   if (win && !win.isDestroyed()) {
     if (win.isMinimized()) win.restore();
     win.show();
@@ -229,7 +245,7 @@ async function play(id) {
     const fullscreen = consoleMode || settings.graphics.fullscreen !== false;
     const started = await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen });
     if (started.process && started.process.exitCode === null) {
-      session = { game, label: started.label, process: started.process };
+      session = { game, label: started.label, process: started.process, started: Date.now() };
       started.process.once('exit', () => gameEnded(started.process));
     }
     settings.lastPlayed[id] = Date.now();
@@ -402,3 +418,8 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => app.quit());
+// Quitting RetroHub mid-game keeps the time played so far (the emulator itself keeps running).
+app.on('before-quit', () => {
+  if (session) recordPlaytime(session);
+  session = null;
+});

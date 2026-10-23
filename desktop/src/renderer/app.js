@@ -1,6 +1,7 @@
 // RetroHub window: sidebar, game grid, Setup page, couch mode and controller input.
 const api = window.retrohub;
 const I = window.ICONS;
+const PLAYTIME = window.PLAYTIME;
 
 let S = null;                 // State from the main process.
 let lastStateJSON = '';
@@ -126,8 +127,15 @@ function cardHtml(game, showSystem) {
       <button class="play-button" data-play title="Play" aria-label="Play ${esc(game.displayTitle)}">${I.play({ size: 22 })}</button>
     </div>
     <div class="card-title">${esc(game.displayTitle)}</div>
-    ${showSystem ? `<div class="card-sub">${esc(system.name)}</div>` : ''}
+    ${cardSub(game, showSystem, system)}
   </div>`;
+}
+
+/** Under a card: the system (in mixed lists) and the time played, such as "NES · 3 h 12 min". */
+function cardSub(game, showSystem, system) {
+  const played = S.playtime[game.id]?.seconds || 0;
+  const parts = [showSystem && system.name, played >= 60 && PLAYTIME.format(played)].filter(Boolean);
+  return parts.length ? `<div class="card-sub">${esc(parts.join(' · '))}</div>` : '';
 }
 
 /** Swaps each placeholder for its cover art once it loads. */
@@ -216,7 +224,7 @@ function renderContent() {
     content.innerHTML = `<div class="page-backdrop" style="--c:${info.color}"></div>${bannerHtml()}
       <div class="page-header">${tile(selection, 'big')}
         <div><h2>${esc(info.title)}</h2>
-          <div class="page-meta"><span>${search.trim() ? `${games.length} of ${gamesText(total)}` : gamesText(total)}</span>${system ? statusHtml(system) : ''}</div>
+          <div class="page-meta"><span>${search.trim() ? `${games.length} of ${gamesText(total)}` : gamesText(total)}</span>${system ? statusHtml(system) : ''}${playedInAll()}</div>
         </div>
       </div>
       ${games.length ? `<div class="grid" id="grid">${games.map((g) => cardHtml(g, !system)).join('')}</div>` : emptyHtml(system)}`;
@@ -224,6 +232,12 @@ function renderContent() {
     announce(games, selectedGame[selection]);
   }
   content.scrollTop = scroll;
+}
+
+/** On Recently Played: the time played across every game. */
+function playedInAll() {
+  const seconds = PLAYTIME.totalSeconds(S.playtime);
+  return selection === 'recent' && seconds >= 60 ? `<span>${esc(PLAYTIME.format(seconds))} played in all</span>` : '';
 }
 
 function emptyHtml(system) {
@@ -371,7 +385,8 @@ function bannerHtml() {
 
 /** What confirming or removing would affect: "favorite · played 3 days ago". */
 function carriesText(item) {
-  const parts = [item.favorite && 'favorite', item.lastPlayed && `played ${timeAgo(item.lastPlayed)}`].filter(Boolean);
+  const parts = [item.favorite && 'favorite', item.lastPlayed && `played ${timeAgo(item.lastPlayed)}`,
+    item.playtime >= 60 && `${PLAYTIME.format(item.playtime)} of play`].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'no favorite or play history';
 }
 
@@ -487,7 +502,7 @@ function updateCouch() {
   const system = systemById(game.system);
   const last = S.lastPlayed[game.id];
   $('couch-details').innerHTML = `<h2>${esc(game.displayTitle)}${S.favorites.includes(game.id) ? `<span class="star">${I.star({ size: 26 })}</span>` : ''}</h2>
-    <p>${esc(system.name)}${last ? ` · Last played ${timeAgo(last)}` : ''}</p>`;
+    <p>${esc(system.name)}${last ? ` · Last played ${timeAgo(last)}` : ''}${(S.playtime[game.id]?.seconds || 0) >= 60 ? ` · Played ${esc(PLAYTIME.format(S.playtime[game.id].seconds))}` : ''}</p>`;
   cover(game.id).then((url) => {
     if (gamesFor(selection)[couchIndex]?.id !== game.id) return;
     $('couch-backdrop').style.backgroundImage = url ? `url(${JSON.stringify(url)})` : 'none';
