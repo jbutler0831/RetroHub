@@ -92,6 +92,30 @@ struct GameSession {
     let game: Game
     let process: Process
     let started: Date
+
+    /// How soon an emulator closing counts as "straight away".
+    static let quickExit: TimeInterval = 10
+
+    enum Ending: Equatable {
+        /// Closed after a while: the game was played.
+        case played
+        /// Closed straight away with an error or a crash: a missing BIOS, core or setting.
+        case failed
+        /// Closed straight away without one: usually handed the game to a copy already open.
+        case handedOff
+    }
+
+    /// The same rule as the desktop app's endOfGame (desktop/src/emulators.js).
+    static func ending(seconds: TimeInterval, status: Int32, crashed: Bool) -> Ending {
+        guard seconds < quickExit else { return .played }
+        return status == 0 && !crashed ? .handedOff : .failed
+    }
+
+    /// What RetroHub says when an emulator closes straight away with an error.
+    static func failedMessage(label: String, status: Int32?, note: String?) -> String {
+        "\(label) closed straight away\(status.map { " (exit code \($0))" } ?? ""). Open it on its own and load the game to see what it says."
+            + (note.map { " \($0)" } ?? "")
+    }
 }
 
 @MainActor
@@ -368,11 +392,24 @@ final class Library: ObservableObject {
 
     /// RetroHub comes back to the front when the game is closed, including from another Space
     /// while couch mode is full screen. macOS doesn't allow it if you've moved on to another app.
+    /// When the emulator closes, RetroHub comes back to the front, and says why if it closed
+    /// straight away with an error. If it closed straight away without one, it most likely handed
+    /// the game to a copy that was already open, so RetroHub stays out of the way.
     private func ended(_ process: Process) {
         guard let session, session.process === process else { return }
         recordPlaytime(session)
         self.session = nil
-        NSApp.activate()
+        let crashed = process.terminationReason == .uncaughtSignal
+        switch GameSession.ending(seconds: Date.now.timeIntervalSince(session.started), status: process.terminationStatus, crashed: crashed) {
+        case .handedOff:
+            return
+        case .played:
+            NSApp.activate()
+        case .failed:
+            NSApp.activate()
+            launchError = GameSession.failedMessage(label: Launcher.label(for: session.game.system) ?? "The emulator",
+                                                    status: crashed ? nil : process.terminationStatus, note: session.game.system.setupNote)
+        }
     }
 
     /// Adds a session's time to its game's play time (sessions under 10 seconds don't count).

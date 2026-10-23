@@ -310,6 +310,14 @@ enum SelfTests {
         expect(game?.isRunning, false, "and the process has ended")
         expect((try? Launcher.start(URL(filePath: "/nonexistent/emulator"), []) { _ in }) == nil, true,
                "a missing emulator is an error, not a silent failure")
+        // The same cases as desktop/test/emulators.test.js.
+        expect(GameSession.ending(seconds: 2, status: 1, crashed: false), .failed, "exit code 1 at once is a failed start")
+        expect(GameSession.ending(seconds: 2, status: 11, crashed: true), .failed, "and so is a crash")
+        expect(GameSession.ending(seconds: 2, status: 0, crashed: false), .handedOff, "closed cleanly at once: handed to a copy already open")
+        expect(GameSession.ending(seconds: 600, status: 1, crashed: false), .played, "after ten minutes it was played, whatever the exit")
+        expect(GameSession.failedMessage(label: "RetroArch (Beetle Saturn)", status: 1, note: "Needs a Saturn BIOS dumped from your console."),
+               "RetroArch (Beetle Saturn) closed straight away (exit code 1). Open it on its own and load the game to see what it says. Needs a Saturn BIOS dumped from your console.",
+               "the message names the emulator and the BIOS note")
     }
 
     /// Controller Diagnostics times are compared with notes taken during a hardware test, so they
