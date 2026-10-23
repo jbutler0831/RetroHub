@@ -30,6 +30,7 @@ enum Graphics {
     static let filterKey = "screenFilter"
     static let scaleKey = "renderScale"
     static let widescreenKey = "widescreen"
+    static let fullscreenKey = "fullscreen"
     static let scales = [1, 2, 3, 4]
 
     static var filter: ScreenFilter {
@@ -37,6 +38,8 @@ enum Graphics {
     }
     static var scale: Int { max(1, UserDefaults.standard.integer(forKey: scaleKey)) }
     static var widescreen: Bool { UserDefaults.standard.bool(forKey: widescreenKey) }
+    /// Games start full screen unless turned off in Setup.
+    static var fullscreen: Bool { UserDefaults.standard.object(forKey: fullscreenKey) as? Bool ?? true }
 }
 
 extension GameSystem {
@@ -56,9 +59,14 @@ enum RetroArchGraphics {
     static let baseDir = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Library/Application Support/RetroArch")
 
+    /// Full screen or in a window, for this run only (RetroArch's own setting is left alone).
+    static func windowArguments(fullscreen: Bool) -> [String] {
+        fullscreen ? ["--fullscreen"] : []
+    }
+
     /// Extra RetroArch arguments for the current graphics settings.
     static func arguments(for system: GameSystem, core: Core) -> [String] {
-        var arguments: [String] = []
+        var arguments = windowArguments(fullscreen: Graphics.fullscreen)
         // Settings for this run only; not saving on exit keeps them out of the user's retroarch.cfg.
         var settings: [String] = []
         let config = readConfig(baseDir.appending(path: "config/retroarch.cfg"))

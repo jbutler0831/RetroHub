@@ -156,9 +156,15 @@ private struct GraphicsCard: View {
     @AppStorage(Graphics.filterKey) private var filter = ScreenFilter.off
     @AppStorage(Graphics.scaleKey) private var scale = 1
     @AppStorage(Graphics.widescreenKey) private var widescreen = false
+    @AppStorage(Graphics.fullscreenKey) private var fullscreen = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            row("Full screen", detail: "Games start full screen in RetroArch. Press F in RetroArch to switch between full screen and a window.") {
+                Toggle("Full screen", isOn: $fullscreen)
+                    .toggleStyle(.switch)
+            }
+            Divider()
             row("Screen filter", detail: "2D systems such as NES, SNES, Genesis, Game Boy and arcade. CRT adds scanlines and a curved screen; Smooth HD rounds off pixel edges.") {
                 Picker("Screen filter", selection: $filter) {
                     ForEach(ScreenFilter.allCases) { Text($0.label).tag($0) }

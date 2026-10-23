@@ -177,6 +177,8 @@ enum SelfTests {
                "N64 3x rounds the ParaLLEl-RDP factor down to a power of two")
         expect(RetroArchGraphics.coreOptions("swanstation", scale: 1, widescreen: false), [:], "native, no hacks")
         expect(RetroArchGraphics.coreOptions("snes9x", scale: 4, widescreen: true), [:], "2D cores get no 3D options")
+        expect(RetroArchGraphics.windowArguments(fullscreen: true), ["--fullscreen"], "games start full screen")
+        expect(RetroArchGraphics.windowArguments(fullscreen: false), [], "or in a window, as RetroArch is set")
     }
 
     private static func coverArt() {
