@@ -138,19 +138,36 @@ function cardSub(game, showSystem, system) {
   return parts.length ? `<div class="card-sub">${esc(parts.join(' · '))}</div>` : '';
 }
 
-/** Swaps each placeholder for its cover art once it loads. */
-function loadCovers(root) {
-  for (const el of root.querySelectorAll('[data-cover]')) {
-    cover(el.dataset.cover).then((url) => {
-      const img = el.querySelector('img');
-      if (!url || !img) return;
-      img.onload = () => {
-        img.hidden = false;
-        el.querySelector('.placeholder')?.remove();
-      };
-      img.src = url;
-    });
+/**
+ * Fetches covers only for games on screen or close to it, so opening a list of thousands doesn't
+ * ask the cover server for all of them at once. Scrolling, and moving through couch mode's
+ * carousel, bring the next ones into reach.
+ */
+const coverObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue;
+    coverObserver.unobserve(entry.target);
+    showCover(entry.target);
   }
+}, { rootMargin: '400px' });
+
+/** Watches each placeholder in root, and stops watching the ones from before (they're gone). */
+function loadCovers(root) {
+  coverObserver.disconnect();
+  for (const el of root.querySelectorAll('[data-cover]')) coverObserver.observe(el);
+}
+
+/** Swaps a placeholder for its cover art once it loads. */
+function showCover(el) {
+  cover(el.dataset.cover).then((url) => {
+    const img = el.querySelector('img');
+    if (!url || !img) return;
+    img.onload = () => {
+      img.hidden = false;
+      el.querySelector('.placeholder')?.remove();
+    };
+    img.src = url;
+  });
 }
 
 // ---- Rendering -------------------------------------------------------------------
@@ -481,10 +498,18 @@ function renderCouch() {
       : `<div class="couch-empty">${I.gamepad({ size: 64 })}<h2>No games yet</h2><p>Add games to ${esc(S.libraryRoot)} to see them here.</p></div>`}
     </div>
     <div class="couch-hints">${hint('A', 'Play')}${hint('Y', 'Favorite')}${hint('LB RB', 'Switch')}${hint('B', 'Exit')}</div>`;
-  loadCovers(couchEl);
   // On a small screen not every tab fits: keep the current list's tab in the middle.
   couchEl.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  // Straight to the current game, without sliding past the ones before it (each would count as
+  // on screen and have its cover fetched); then watch for the covers in view.
+  const carousel = $('carousel');
+  if (carousel) carousel.style.transition = 'none';
   updateCouch();
+  if (carousel) {
+    void carousel.offsetWidth;
+    carousel.style.transition = '';
+  }
+  loadCovers(couchEl);
 }
 
 /** Moves the carousel and refreshes the title and backdrop without rebuilding it. */
