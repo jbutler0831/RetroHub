@@ -5,7 +5,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { SYSTEMS, MAKERS, EMULATORS } = require('./systems');
 const { scanLibrary, systemDir } = require('./library');
-const { availableEmulators, resolve, readiness, launch } = require('./emulators');
+const { availableEmulators, resolve, readiness, launch, endOfGame, failedMessage } = require('./emulators');
 const { coverPath, knownMissing, lookAgain } = require('./covers');
 const scanner = require('./scanner');
 const playtime = require('./renderer/playtime');
@@ -221,16 +221,25 @@ function sendState() {
   win?.webContents.send('state', state());
 }
 
-/** RetroHub comes back to the front when the game is closed, as the Mac app does. */
-function gameEnded(child) {
+/**
+ * When the emulator closes: RetroHub comes back to the front, as the Mac app does, and says why if
+ * it closed straight away with an error. If it closed straight away without one, it most likely
+ * handed the game to a copy that was already open, so RetroHub stays out of the way.
+ */
+function gameEnded(child, code, signal) {
   if (session?.process !== child) return;
-  recordPlaytime(session);
+  const ended = session;
   session = null;
+  recordPlaytime(ended);
   sendState();
-  if (win && !win.isDestroyed()) {
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
+  const ending = endOfGame((Date.now() - ended.started) / 1000, code, signal);
+  if (ending === 'handedOff' || !win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (ending === 'failed') {
+    const system = SYSTEMS.find((s) => s.id === ended.game.system);
+    win.webContents.send('error', failedMessage(ended.label, code, system?.note));
   }
 }
 
@@ -246,7 +255,7 @@ async function play(id) {
     const started = await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen });
     if (started.process && started.process.exitCode === null) {
       session = { game, label: started.label, process: started.process, started: Date.now() };
-      started.process.once('exit', () => gameEnded(started.process));
+      started.process.once('exit', (code, signal) => gameEnded(started.process, code, signal));
     }
     settings.lastPlayed[id] = Date.now();
     saveSettings();
