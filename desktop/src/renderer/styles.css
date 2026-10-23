@@ -452,7 +452,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   gap: 20px;
   padding: 44px 60px 0;
 }
-.couch-tabs .tabs { flex: 1; display: flex; gap: 32px; overflow: hidden; justify-content: center; }
+/* Centered when they all fit; otherwise they scroll so the current list's tab stays in view. */
+.couch-tabs .tabs { flex: 1; display: flex; gap: 32px; overflow: hidden; justify-content: safe center; }
 .couch-tabs .tab { font-size: 22px; opacity: 0.45; white-space: nowrap; cursor: pointer; }
 .couch-tabs .tab.active { opacity: 1; font-weight: 700; }
 .button-badge {

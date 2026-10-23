@@ -369,6 +369,8 @@ function renderCouch() {
     </div>
     <div class="couch-hints">${hint('A', 'Play')}${hint('Y', 'Favorite')}${hint('LB RB', 'Switch')}${hint('B', 'Exit')}</div>`;
   loadCovers(couchEl);
+  // On a small screen not every tab fits: keep the current list's tab in the middle.
+  couchEl.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   updateCouch();
 }
 
