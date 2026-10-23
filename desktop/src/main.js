@@ -82,16 +82,36 @@ function state() {
 }
 
 let win;
+/** The game RetroHub started, while its emulator runs: { game, label, process }. */
+let session = null;
 
 function sendState() {
   win?.webContents.send('state', state());
 }
 
+/** RetroHub comes back to the front when the game is closed, as the Mac app does. */
+function gameEnded(child) {
+  if (session?.process !== child) return;
+  session = null;
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
+}
+
 async function play(id) {
   const game = gamesById.get(id);
   if (!game) return { error: 'That game is no longer in your library.' };
+  // One game at a time: A pressed again while the emulator starts, or while it's open behind
+  // RetroHub, mustn't start a second copy.
+  if (session) return { error: `${session.label} is still running ${session.game.displayTitle}. Close it to start another game.` };
   try {
-    await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen: consoleMode });
+    const started = await launch(game, settings.emulatorPaths, settings.graphics, { fullscreen: consoleMode });
+    if (started.process && started.process.exitCode === null) {
+      session = { game, label: started.label, process: started.process };
+      started.process.once('exit', () => gameEnded(started.process));
+    }
     settings.lastPlayed[id] = Date.now();
     saveSettings();
     sendState();
@@ -223,7 +243,22 @@ function createWindow() {
 
 if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
 
+// One RetroHub at a time: a second copy would also read the controller and overwrite the same
+// settings file. Opening RetroHub again brings the open window forward instead.
+const firstCopy = app.requestSingleInstanceLock();
+if (!firstCopy) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!win) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+}
+
 app.whenReady().then(() => {
+  if (!firstCopy) return;
   loadSettings();
   // Before the window is created, so it opens in the chosen appearance without a flash.
   nativeTheme.themeSource = APPEARANCES.includes(settings.appearance) ? settings.appearance : 'system';
