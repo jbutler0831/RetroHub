@@ -30,9 +30,10 @@ const appCommand = process.env.RETROHUB_APP ? [process.env.RETROHUB_APP] : [elec
 // GitHub's Linux machines don't allow Chromium's sandbox; the app itself is unchanged.
 const sandbox = process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : [];
 
-/** Starts RetroHub with a debugging port on localhost, and these arguments. */
-function startApp(port, ...args) {
-  return spawn(appCommand[0], [...appCommand.slice(1), ...args, `--remote-debugging-port=${port}`, ...sandbox], { stdio: 'ignore' });
+/** Starts RetroHub with a debugging port on localhost, and these arguments; what it prints goes to logFile. */
+function startApp(port, logFile, ...args) {
+  const log = fs.openSync(logFile, 'w');
+  return spawn(appCommand[0], [...appCommand.slice(1), ...args, `--remote-debugging-port=${port}`, ...sandbox], { stdio: ['ignore', log, log] });
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -109,7 +110,8 @@ function helpers(send, group, results) {
 
 /** Opens RetroHub on dataDir, runs one phase of a group's steps, and quits it. */
 async function runPhase(phase, group, port, dataDir, results) {
-  const app = startApp(port, `--data-dir=${dataDir}`);
+  const logFile = path.join(dataDir, `app-${port}.log`);
+  const app = startApp(port, logFile, `--data-dir=${dataDir}`);
   let ws;
   try {
     const connection = await connect(port);
@@ -123,6 +125,7 @@ async function runPhase(phase, group, port, dataDir, results) {
     results.checks++;
     results.failures++;
     console.log(`  FAIL ${error.message}`);
+    console.log(`  what RetroHub printed (exit code ${app.exitCode}):\n${fs.readFileSync(logFile, 'utf8').slice(-3000)}`);
   } finally {
     ws?.close();
     app.kill();

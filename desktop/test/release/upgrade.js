@@ -6,6 +6,7 @@
 //
 // Both use RetroHub's normal settings folder and ~/Games, as a real upgrade does, so only run it on
 // a machine where that's fine, such as a fresh GitHub runner. Exits non-zero if a check fails.
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -24,7 +25,10 @@ const check = (passed, label) => {
 (async () => {
   if (phase === 'before') makeLibrary(games);
   const sandbox = process.platform === 'linux' && process.env.CI ? ['--no-sandbox'] : [];
-  const app = spawn(program, ['--remote-debugging-port=9400', ...sandbox], { stdio: 'ignore' });
+  // What the app prints, shown if its window never opens.
+  const logFile = path.join(os.tmpdir(), `retrohub-upgrade-${phase}.log`);
+  const log = fs.openSync(logFile, 'w');
+  const app = spawn(program, ['--remote-debugging-port=9400', ...sandbox], { stdio: ['ignore', log, log] });
   let ws;
   try {
     const connection = await connect(9400);
@@ -60,6 +64,7 @@ const check = (passed, label) => {
     }
   } catch (error) {
     check(false, error.message);
+    console.log(`  what ${path.basename(program)} printed (exit code ${app.exitCode}):\n${fs.readFileSync(logFile, 'utf8').slice(-3000)}`);
   } finally {
     ws?.close();
     app.kill();

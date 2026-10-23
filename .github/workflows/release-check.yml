@@ -63,8 +63,9 @@ jobs:
           get() { # tag pattern folder
             gh release download "$1" -R "$GITHUB_REPOSITORY" -p "$2" -D "$3" --clobber
             for file in "$3"/$2; do
-              want=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$1" -q ".assets[] | select(.name == \"$(basename "$file")\") | .digest" | sed 's/^sha256://')
-              got=$(sha256sum "$file" | cut -d' ' -f1)
+              # tr: on Windows the output can end in a carriage return.
+              want=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$1" -q ".assets[] | select(.name == \"$(basename "$file")\") | .digest" | sed 's/^sha256://' | tr -d '\r')
+              got=$(sha256sum "$file" | cut -d' ' -f1 | tr -d '\r\\')
               if [ -z "$want" ]; then echo "no checksum published: $(basename "$file")"
               elif [ "$want" = "$got" ]; then echo "checksum OK: $(basename "$file")"
               else echo "CHECKSUM MISMATCH: $(basename "$file")"; exit 1; fi
@@ -196,9 +197,10 @@ jobs:
           mkdir -p ~/Applications
           ditto "$RUNNER_TEMP/old/RetroHub.app" ~/Applications/RetroHub.app
           echo "previous: $(plutil -extract CFBundleShortVersionString raw ~/Applications/RetroHub.app/Contents/Info.plist)"
-          # A 1.6 user's settings: a favorite and a game played.
-          defaults write $id favorites -array "$favorite"
-          defaults write $id lastPlayed -dict "$favorite" -date "2026-10-20 12:00:00 +0000"
+          # A 1.6 user's settings: a favorite and a game played. Through a property list, as
+          # defaults' own parser trips over the commas and brackets in the game's name.
+          FAVORITE="$favorite" python3 -c 'import os, plistlib, datetime, sys; f = os.environ["FAVORITE"]; plistlib.dump({"favorites": [f], "lastPlayed": {f: datetime.datetime(2026, 10, 20, 12)}}, sys.stdout.buffer)' > "$RUNNER_TEMP/settings-1.6.plist"
+          defaults import $id "$RUNNER_TEMP/settings-1.6.plist"
           open_for ~/Applications/RetroHub.app 8
           rm -rf ~/Applications/RetroHub.app
           ditto "$RUNNER_TEMP/new/dmg/RetroHub.app" ~/Applications/RetroHub.app
