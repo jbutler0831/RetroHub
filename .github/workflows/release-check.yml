@@ -84,13 +84,14 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0t64 libnss3 libasound2t64 libgbm1
 
-      # AppImages are unpacked, as GitHub's machines have no FUSE to mount them.
+      # AppImages are unpacked, as GitHub's machines have no FUSE to mount them. The app's own
+      # program is run (AppRun needs the variables the AppImage itself would set).
       - name: Unpack (Linux)
         if: runner.os == 'Linux'
         run: |
           for v in old new; do
             (cd "$RUNNER_TEMP/$v" && chmod +x ./*.AppImage && ./*.AppImage --appimage-extract > /dev/null)
-            echo "${v^^}_APP=$RUNNER_TEMP/$v/squashfs-root/AppRun" >> "$GITHUB_ENV"
+            echo "${v^^}_APP=$RUNNER_TEMP/$v/squashfs-root/retrohub" >> "$GITHUB_ENV"
           done
 
       - name: Stand-in emulator (Windows)
@@ -99,29 +100,38 @@ jobs:
           dotnet publish test/release/StandIn -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o "$RUNNER_TEMP/standin"
           echo "RETROHUB_STAND_IN=$(cygpath -w "$RUNNER_TEMP/standin/StandIn.exe")" >> "$GITHUB_ENV"
 
+      - name: Install the previous release (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-Item "$env:RUNNER_TEMP\old\RetroHub-Setup-*.exe"
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $app = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse -Depth 3 -Filter RetroHub.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $app) { Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 40 FullName; throw 'RetroHub.exe not found after installing' }
+          "installed: $($app.FullName)"
+          "OLD_APP=$($app.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
       - name: Upgrade, part 1 (the previous release)
         run: |
-          if [ "$RUNNER_OS" = Windows ]; then
-            powershell -Command "Start-Process -FilePath (Get-Item '$RUNNER_TEMP/old/RetroHub-Setup-*.exe').FullName -ArgumentList '/S' -Wait"
-            app=$(cygpath -w "$(find "$(cygpath -u "$LOCALAPPDATA")/Programs" "$(cygpath -u "$PROGRAMFILES")" -maxdepth 3 -iname RetroHub.exe 2>/dev/null | head -1)")
-            echo "installed: $app"
-            echo "INSTALLED_APP=$app" >> "$GITHUB_ENV"
-            node test/release/upgrade.js before "$app"
-          else
-            xvfb-run -a node test/release/upgrade.js before "$OLD_APP"
-          fi
+          if [ "$RUNNER_OS" = Windows ]; then node test/release/upgrade.js before "$OLD_APP"
+          else xvfb-run -a node test/release/upgrade.js before "$OLD_APP"; fi
+
+      - name: Install this release over it (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-Item "$env:RUNNER_TEMP\new\RetroHub-Setup-*.exe"
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $app = Get-ChildItem "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Recurse -Depth 3 -Filter RetroHub.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $app) { throw 'RetroHub.exe not found after installing' }
+          if ($app.FullName -eq $env:OLD_APP) { "installed over the previous version: $($app.FullName)" } else { "installed: $($app.FullName) (the previous one was $env:OLD_APP)" }
+          "version: $($app.VersionInfo.ProductVersion)"
+          "NEW_APP=$($app.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Upgrade, part 2 (this release, on the same settings)
         run: |
-          if [ "$RUNNER_OS" = Windows ]; then
-            powershell -Command "Start-Process -FilePath (Get-Item '$RUNNER_TEMP/new/RetroHub-Setup-*.exe').FullName -ArgumentList '/S' -Wait"
-            app=$(cygpath -w "$(find "$(cygpath -u "$LOCALAPPDATA")/Programs" "$(cygpath -u "$PROGRAMFILES")" -maxdepth 3 -iname RetroHub.exe 2>/dev/null | head -1)")
-            [ "$app" = "$INSTALLED_APP" ] && echo "installed over the previous version: $app" || echo "installed: $app (the previous one was $INSTALLED_APP)"
-            echo "NEW_APP=$app" >> "$GITHUB_ENV"
-            node test/release/upgrade.js after "$app"
-          else
-            xvfb-run -a node test/release/upgrade.js after "$NEW_APP"
-          fi
+          if [ "$RUNNER_OS" = Windows ]; then node test/release/upgrade.js after "$NEW_APP"
+          else xvfb-run -a node test/release/upgrade.js after "$NEW_APP"; fi
 
       - name: Window checks on the installed app
         run: |
