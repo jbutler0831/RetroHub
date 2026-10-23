@@ -1,4 +1,5 @@
-// The test library for the window checks: empty placeholder files, no real games. The Mac app's
+// The test library for the window checks: placeholder files, no real games. Each holds its own
+// name, so no two look like copies of each other to the scanner. The Mac app's
 // mac/scripts/make-test-library.swift makes a similar one (with a playable test ROM).
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +19,7 @@ function makeLibrary(root) {
   for (const file of FILES) {
     const full = path.join(root, file);
     fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, '');
+    fs.writeFileSync(full, `RetroHub placeholder: ${file}\n`);
   }
 }
 

@@ -65,6 +65,7 @@ function itemInfo(key) {
     favorites: { title: 'Favorites', color: '#ffb800', icon: I.star },
     recent: { title: 'Recently Played', color: '#ff9500', icon: I.clock },
     setup: { title: 'Setup', color: '#8e8e93', icon: I.wrench },
+    check: { title: 'Library Check', color: '#5856d6', icon: I.refresh },
   }[key];
 }
 
@@ -205,12 +206,14 @@ function renderContent() {
   const scroll = content.scrollTop;
   if (selection === 'setup') {
     renderSetup();
+  } else if (selection === 'check') {
+    renderCheck();
   } else {
     const games = visibleGames();
     if (games.length && !games.some((g) => g.id === selectedGame[selection])) selectedGame[selection] = games[0].id;
     const system = systemFor(selection);
     const total = gamesFor(selection).length;
-    content.innerHTML = `<div class="page-backdrop" style="--c:${info.color}"></div>
+    content.innerHTML = `<div class="page-backdrop" style="--c:${info.color}"></div>${bannerHtml()}
       <div class="page-header">${tile(selection, 'big')}
         <div><h2>${esc(info.title)}</h2>
           <div class="page-meta"><span>${search.trim() ? `${games.length} of ${gamesText(total)}` : gamesText(total)}</span>${system ? statusHtml(system) : ''}</div>
@@ -297,6 +300,14 @@ function renderSetup() {
         </div>
       </section>
       <section>
+        <h3>Library</h3>
+        <p class="subtitle">RetroHub notices new, moved, renamed, missing and duplicate games each time it scans, and asks before changing anything.</p>
+        <div class="panel row-panel">
+          <div class="grow">${esc(checkSummary() || 'No changes since you last checked.')}</div>
+          <button class="button" data-show="check">Check Library…</button>
+        </div>
+      </section>
+      <section>
         <h3>Graphics</h3>
         <p class="subtitle">Applied when RetroHub starts a game in RetroArch. RetroArch's own settings stay as they are.</p>
         <div class="panel graphics-panel">
@@ -336,6 +347,90 @@ function renderSetup() {
         <div class="panel bios-list">${notes.map((s) => `<div class="bios-row">${tile(`sys:${s.id}`)}<strong>${esc(s.name)}</strong><span>${esc(s.note)}</span></div>`).join('')}</div>
       </section>
     </div>`;
+}
+
+// ---- Library Check ---------------------------------------------------------------------
+
+const fileName = (file) => file.split(/[\\/]/).pop();
+let listBeforeCheck = null;   // Where Done goes back to.
+
+/** "3 new · 1 moved or renamed · 2 missing": what changed since the last review, or ''. */
+function checkSummary() {
+  const n = S.libraryCheck.news;
+  return [n.added && `${n.added} new`, n.renamed && `${n.renamed} moved or renamed`, n.missing && `${n.missing} missing`]
+    .filter(Boolean).join(' · ');
+}
+
+function bannerHtml() {
+  const summary = checkSummary();
+  return summary ? `<div class="library-banner" role="status">${I.refresh({ size: 14 })}<span class="grow">Library changed: ${esc(summary)}</span>
+    <button class="button small" data-show="check">Review</button></div>` : '';
+}
+
+/** What confirming or removing would affect: "favorite · played 3 days ago". */
+function carriesText(item) {
+  const parts = [item.favorite && 'favorite', item.lastPlayed && `played ${timeAgo(item.lastPlayed)}`].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'no favorite or play history';
+}
+
+function renderCheck() {
+  const c = S.libraryCheck;
+  const gameCell = (title, system, detail) =>
+    `${tile(`sys:${system}`)}<div class="grow"><strong>${esc(title)}</strong><span>${esc(detail)}</span></div>`;
+  const section = (title, subtitle, items, row, actions = '') => `<section>
+      <div class="check-heading"><h3>${esc(title)} <span class="count">${items.length}</span></h3>${items.length ? actions : ''}</div>
+      <p class="subtitle">${esc(subtitle)}</p>
+      ${items.length ? `<div class="panel check-list">${items.map(row).join('')}</div>` : '<p class="check-none">None.</p>'}
+    </section>`;
+  const summary = checkSummary();
+  content.innerHTML = `<div class="page-backdrop" style="--c:#5856d6"></div>
+    <div class="page-header">${tile('check', 'big')}
+      <div><h2>Library Check</h2><div class="page-meta">${esc(summary ? `Since you last checked: ${summary}` : 'No changes since you last checked.')}</div></div>
+    </div>
+    <div class="setup check">
+      ${section('Moved or renamed', 'Files that turned up under a new name. Their favorite and play history move with them only when you confirm.',
+        c.renamed, (r) => `<div class="check-row">${gameCell(r.title, r.system, `${fileName(r.from)} → ${fileName(r.to)} · ${carriesText(r)}`)}
+          <button class="button small primary" data-check="applyRename" data-from="${esc(r.from)}" data-to="${esc(r.to)}">Same game</button>
+          <button class="button small" data-check="notRenamed" data-from="${esc(r.from)}">Not the same</button></div>`,
+        '<button class="button small" data-check="applyAllRenames">Same game for all</button>')}
+      ${section('Missing', "Games whose files are gone. They're kept, with their favorites and play history, until you remove them, so nothing is lost if the files come back (from an external drive, say).",
+        c.missing, (m) => `<div class="check-row">${gameCell(m.title, m.system, `${fileName(m.path)} · missing since ${timeAgo(m.since)} · ${carriesText(m)}`)}
+          <button class="button small" data-check="removeMissing" data-path="${esc(m.path)}">Remove</button></div>`,
+        '<button class="button small" data-check="removeAllMissing">Remove all</button>')}
+      ${section('New', 'Games added since you last checked. They are already in your library.',
+        c.added, (a) => `<div class="check-row">${gameCell(a.title, a.system, `${systemById(a.system)?.name || a.system} · ${fileName(a.path)}`)}</div>`)}
+      ${section('Duplicates', 'The same file in more than one place.',
+        c.duplicates, (d) => `<div class="check-row">${gameCell(d.title, d.system, d.paths.map(fileName).join(' · '))}
+          ${d.paths.map((p, i) => `<button class="button small" data-check="showFile" data-path="${esc(p)}" title="${esc(p)}">Show copy ${i + 1}</button>`).join('')}</div>`)}
+      ${section('No cover art found', 'RetroHub looked for these covers and found none. Put an image with the same name next to the game, or look again.',
+        c.noArt, (g) => `<div class="check-row">${gameCell(g.title, g.system, systemById(g.system)?.name || g.system)}</div>`,
+        '<button class="button small" data-check="lookAgain">Look again</button>')}
+      <div class="check-done"><button class="button primary" data-check="markReviewed">Done</button></div>
+    </div>`;
+}
+
+/** A button on the Library Check page. Nothing changes without one of these. */
+async function checkAction(action, target) {
+  const c = S.libraryCheck;
+  const d = target.dataset;
+  let next;
+  if (action === 'applyRename') next = await api.libraryAction('applyRename', { from: d.from, to: d.to });
+  else if (action === 'applyAllRenames') for (const r of c.renamed) next = await api.libraryAction('applyRename', { from: r.from, to: r.to });
+  else if (action === 'notRenamed') next = await api.libraryAction('notRenamed', { from: d.from });
+  else if (action === 'removeMissing') next = await api.libraryAction('removeMissing', { paths: [d.path] });
+  else if (action === 'removeAllMissing') {
+    const count = c.missing.length;
+    if (!confirm(`Remove ${count === 1 ? 'the missing game' : `all ${count} missing games`}? Their favorites and play history are forgotten.`)) return;
+    next = await api.libraryAction('removeMissing', { paths: c.missing.map((m) => m.path) });
+  } else if (action === 'lookAgain') {
+    for (const g of c.noArt) coverCache.delete(g.id);
+    next = await api.libraryAction('lookAgain', { ids: c.noArt.map((g) => g.id) });
+  } else if (action === 'showFile') return api.showFile(d.path);
+  else if (action === 'markReviewed') {
+    applyState(await api.libraryAction('markReviewed'), true);
+    return show(listBeforeCheck || 'sys:nes');
+  }
+  if (next) applyState(next, true);
 }
 
 // ---- Couch mode --------------------------------------------------------------------
@@ -476,6 +571,7 @@ function cycle(step) {
 /** Shows a list or Setup in the browser, leaving couch mode. */
 function show(key) {
   if (couch) setCouch(false);
+  if (key === 'check' && selection !== 'check') listBeforeCheck = selection;
   selection = key;
   render();
 }
@@ -544,7 +640,7 @@ nav.addEventListener('click', (event) => {
 });
 
 async function handleButtons(event) {
-  const target = event.target.closest('[data-download], [data-open-folder], [data-choose-root], [data-locate], [data-play], [data-exit], [data-tab], [data-graphics], [data-appearance]');
+  const target = event.target.closest('[data-download], [data-open-folder], [data-choose-root], [data-locate], [data-play], [data-exit], [data-tab], [data-graphics], [data-appearance], [data-show], [data-check]');
   if (!target) return false;
   const d = target.dataset;
   if ('download' in d) api.openDownload(d.download);
@@ -556,6 +652,8 @@ async function handleButtons(event) {
   else if ('tab' in d) { selection = d.tab; couchIndex = pickedIndex(); render(); }
   else if ('graphics' in d) applyState(await api.setGraphics({ [d.graphics]: JSON.parse(d.value) }));
   else if ('appearance' in d) applyState(await api.setAppearance(d.appearance));
+  else if ('show' in d) { show(d.show); content.focus(); }
+  else if ('check' in d) await checkAction(d.check, target);
   return true;
 }
 

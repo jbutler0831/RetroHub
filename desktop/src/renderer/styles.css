@@ -422,6 +422,32 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .bios-row strong { width: 130px; flex: none; }
 .bios-row span { color: var(--text-2); }
 
+/* ---- Library Check ---- */
+
+.library-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 32px 0;
+  padding: 8px 10px 8px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #5856d6 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, #5856d6 30%, transparent);
+  font-size: 13px;
+}
+.library-banner .grow { flex: 1; }
+.check-heading { display: flex; align-items: center; gap: 12px; }
+.check-heading h3 { flex: 1; }
+.check-heading .count { color: var(--text-2); font-weight: 500; margin-left: 4px; }
+.check-list { padding: 4px 16px; }
+.check-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.check-row + .check-row { border-top: 1px solid var(--border); }
+.check-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.check-row .grow span { color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.check-none { margin: 0; color: var(--text-2); font-size: 13px; }
+.check-done { margin-top: 26px; }
+
 /* ---- Couch mode ---- */
 
 /* Cover size and spacing, read by app.js to center the carousel. Smaller on handheld screens. */
