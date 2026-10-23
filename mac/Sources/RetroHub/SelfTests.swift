@@ -25,7 +25,8 @@ enum SelfTests {
         for (name, section) in [("titles", titles), ("PARAM.SFO", { sfo(in: tmp.appending(path: "sfo")) }),
                                 ("scanning", { scanning(in: tmp.appending(path: "library")) }),
                                 ("systems", systems), ("sidebar", sidebar), ("RetroArch options", retroArchOptions),
-                                ("cover art", coverArt), ("appearance", appearance), ("game process", gameProcess),
+                                ("cover art", coverArt), ("old settings", legacySettings),
+                                ("appearance", appearance), ("game process", gameProcess),
                                 ("controller diagnostics", controllerDiagnostics), ("compatibility", compatibility)] {
             print("- \(name)")
             section()
@@ -187,6 +188,16 @@ enum SelfTests {
             expect(CoverArt.result(status: status, data: Data()), .offline, "\(status) is retried later")
         }
         expect(CoverArt.result(status: nil, data: Data()), .offline, "no HTTP status is retried later")
+    }
+
+    /// Only the installed RetroHub takes over the settings saved under the old bundle ID; the
+    /// development copies must never see the Mac's real favorites, recents or games folder.
+    private static func legacySettings() {
+        expect(Library.takesLegacySettings(bundleID: "io.github.jbutler0831.retrohub"), true, "the installed RetroHub")
+        for id in ["io.github.jbutler0831.retrohub.dev", "io.github.jbutler0831.retrohub.devcheck", "local.retrohub"] {
+            expect(Library.takesLegacySettings(bundleID: id), false, "not \(id)")
+        }
+        expect(Library.takesLegacySettings(bundleID: nil), false, "not the bare debug binary")
     }
 
     /// Launcher reports when the emulator's process ends, with its exit status, also when it

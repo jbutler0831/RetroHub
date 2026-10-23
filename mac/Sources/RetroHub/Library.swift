@@ -83,6 +83,8 @@ final class Library: ObservableObject {
     private static let recentLimit = 24
     /// The bundle ID RetroHub used to have; its settings are copied over once.
     private static let legacyDomain = "local.retrohub"
+    /// The installed RetroHub's bundle ID, the only one that takes over the old settings.
+    private static let releaseBundleID = "io.github.jbutler0831.retrohub"
 
     @Published private(set) var root: URL
     @Published private(set) var games: [GameSystem: [Game]] = [:]
@@ -107,8 +109,14 @@ final class Library: ObservableObject {
         rescan()
     }
 
+    /// Development copies (RetroHub Dev, RetroHub Dev Check) keep their own settings: given the old
+    /// ones, they showed the Mac's real favorites and recents, and the window checks failed.
+    static func takesLegacySettings(bundleID: String?) -> Bool {
+        bundleID == releaseBundleID
+    }
+
     private static func migrateLegacySettings(into defaults: UserDefaults) {
-        guard Bundle.main.bundleIdentifier != legacyDomain,
+        guard takesLegacySettings(bundleID: Bundle.main.bundleIdentifier),
               let legacy = UserDefaults.standard.persistentDomain(forName: legacyDomain) else { return }
         for key in [rootKey, favoritesKey, lastPlayedKey] where defaults.object(forKey: key) == nil {
             if let value = legacy[key] {
