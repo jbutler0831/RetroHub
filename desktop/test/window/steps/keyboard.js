@@ -49,8 +49,10 @@ module.exports = {
     check(await title() === 'Setup', `Ctrl+, shows Setup: ${await title()}`);
     await key('[', CTRL);
     check(await title() === 'Arcade', `Ctrl+[ from Setup wraps to the last list, Arcade: ${await title()}`);
-    check(await evaluate(`(() => { const r = document.querySelector('.nav-item.active').getBoundingClientRect(), n = document.getElementById('nav').getBoundingClientRect(); return r.top >= n.top && r.bottom <= n.bottom; })()`),
-      'and the sidebar scrolls Arcade into view');
+    // Within a pixel: rows can be a fraction of a pixel tall (Linux and Windows fonts), and scrolling is whole pixels.
+    const row = await evaluate(`(() => { const r = document.querySelector('.nav-item.active').getBoundingClientRect(), n = document.getElementById('nav').getBoundingClientRect();
+      return { top: r.top - n.top, bottom: n.bottom - r.bottom }; })()`);
+    check(row.top >= -1 && row.bottom >= -1, `and the sidebar scrolls Arcade into view (${row.top.toFixed(1)}px below the top, ${row.bottom.toFixed(1)}px above the bottom)`);
     await key(']', CTRL);
     check(await title() === 'Favorites', `Ctrl+] from Arcade wraps to Favorites: ${await title()}`);
     await key('r', CTRL);
